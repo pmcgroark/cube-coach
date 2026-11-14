@@ -1812,7 +1812,8 @@
               btn('With my cube', 'hand', go('solve', { device: 'physical', source: 'drill', stage: s.id })),
               btn('Watch it', 'watch', go('watch', { stage: s.id }), 'btn-ghost'),
               btn('Lesson', 'learn', go('lesson', { id: s.id }), 'btn-ghost'),
-              drillStages[s.id] ? btn('Drills', 'zap', function () { state.stage = s.id; showTab('drills'); tabButtons.drills.focus(); }, 'btn-ghost') : null));
+              drillStages[s.id] ? btn('Drills', 'zap', function () { state.stage = s.id; showTab('drills'); tabButtons.drills.focus(); }, 'btn-ghost') : null,
+              s.id === 'middle' && C.Gym ? btn('Middle Layer Gym', 'zap', go('gym'), 'btn-soft') : null));
         }
 
         panelEl.appendChild(h('div', { class: 'stack' },

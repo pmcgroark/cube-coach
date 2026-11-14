@@ -283,6 +283,11 @@
     refresh: ['M20 11.5a8 8 0 1 0-2.4 5.9', 'M20 4.5v7h-7'],
     trophy: ['M8 21h8', 'M12 17v4', 'M7 4h10v5a5 5 0 0 1-10 0z', 'M17 5.5h3V7a3 3 0 0 1-3 3', 'M7 5.5H4V7a3 3 0 0 0 3 3'],
     keyboard: ['M3 6.5h18v11H3z', 'M7 10h.01', 'M11 10h.01', 'M15 10h.01', 'M7.5 14h9'],
+    share: ['M12 15V3', 'M8 7l4-4 4 4', 'M8.5 10.5H6a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 6 21.5h12a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5h-2.5'],
+    copy: [['rect', { x: 8.5, y: 8.5, width: 12, height: 12, rx: 2 }], 'M15.5 8.5V5.5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3'],
+    phone: [['rect', { x: 6.5, y: 2.5, width: 11, height: 19, rx: 2.5 }], 'M10.5 18.5h3'],
+    offline: ['M2.5 9a15 15 0 0 1 19 0', 'M5.5 12.5a10 10 0 0 1 13 0', 'M9 16a5 5 0 0 1 6 0', 'M12 19.5v.01'],
+    swap: ['M4 8h14', 'M14 4l4 4-4 4', 'M20 16H6', 'M10 12l-4 4 4 4'],
     hand: ['M8 13V5.5a1.5 1.5 0 0 1 3 0V11', 'M11 10V4a1.5 1.5 0 0 1 3 0v6', 'M14 10V5.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-.5a6 6 0 0 1-4.6-2.2L3 14.5a1.6 1.6 0 0 1 2.4-2L8 15']
   };
 
@@ -319,10 +324,51 @@
       h('span', { class: 'tile__arrow' }, icon('arrowRight', 18)));
   }
 
+  // copyText(text) -> Promise<bool>. Async Clipboard API where allowed, else a hidden textarea +
+  // execCommand('copy') (older WebKit, insecure origins). Must be called from a tap/click.
+  function copyText(text) {
+    text = String(text == null ? '' : text);
+    function legacy() {
+      if (!hasDOM()) return false;
+      var ta = h('textarea', { readonly: true, 'aria-hidden': 'true', style: { position: 'fixed', top: '0', left: '-9999px', opacity: '0', fontSize: '16px' } });
+      ta.value = text;
+      document.body.appendChild(ta);
+      var ok = false;
+      try {
+        ta.focus({ preventScroll: true });
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        ok = !!document.execCommand('copy');
+      } catch (e) { ok = false; }
+      if (ta.parentNode) ta.parentNode.removeChild(ta);
+      return ok;
+    }
+    var nav = root.navigator;
+    if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
+      return nav.clipboard.writeText(text).then(function () { return true; }, function () { return legacy(); });
+    }
+    return Promise.resolve(legacy());
+  }
+
+  function canShare(data) {
+    var nav = root.navigator;
+    if (!nav || typeof nav.share !== 'function') return false;
+    try { return typeof nav.canShare === 'function' ? !!nav.canShare(data || { text: 'x' }) : true; } catch (e) { return false; }
+  }
+
+  // shareText({ title, text, url }) -> Promise<'shared'|'cancelled'|'unsupported'|'failed'> (system share sheet)
+  function shareText(data) {
+    if (!canShare(data)) return Promise.resolve('unsupported');
+    return root.navigator.share(data).then(function () { return 'shared'; }, function (err) {
+      return err && err.name === 'AbortError' ? 'cancelled' : 'failed';
+    });
+  }
+
   var UI = {
     h: h, empty: empty, fmtTime: fmtTime, algChips: algChips, stageTrack: stageTrack, colourDot: colourDot,
     isTyping: isTyping, shortcutsBlocked: shortcutsBlocked, reducedMotion: reducedMotion,
-    icon: icon, ICONS: ICONS, stages: stages, FALLBACK_STAGES: FALLBACK_STAGES, callout: callout, tile: tile
+    icon: icon, ICONS: ICONS, stages: stages, FALLBACK_STAGES: FALLBACK_STAGES, callout: callout, tile: tile,
+    copyText: copyText, canShare: canShare, shareText: shareText
   };
 
   // ================================================================ data
@@ -395,7 +441,7 @@
   var paramCacheOrder = [];
   var NAV_MAP = {
     home: 'home', learn: 'learn', lesson: 'learn', watch: 'learn',
-    drills: 'practice', solve: 'practice', scan: 'practice', stats: 'stats', settings: 'settings'
+    drills: 'practice', solve: 'practice', scan: 'practice', gym: 'practice', stats: 'stats', settings: 'settings'
   };
 
   function isSimple(v) { return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'; }
@@ -535,6 +581,7 @@
     var def = screens[id] || null;
     current = { id: id, params: params };
     renderedHash = root.location.hash;
+    wake.reset(); // a screen that wants the screen kept on asks again in mount()
     updateNav((def && def.nav) || NAV_MAP[id] || id);
     var title = resolveTitle(def, params);
     document.title = (!title || id === 'home') ? 'Cube Coach' : title + ' · Cube Coach';
@@ -789,6 +836,257 @@
     }
   }
 
+  // ================================================================ keep the screen awake
+  // createWakeKeeper(env) — the Screen Wake Lock logic, with the environment injected so it can be
+  // tested in node. env: { wakeLock(): navigator.wakeLock|undefined, visible(): bool }.
+  // set(on, reason?): the screen stays on while any reason is on. set(false) with no reason clears
+  // them all. The browser drops the lock whenever the page is hidden; sync() (on visibilitychange)
+  // takes it again. If a request is refused (e.g. it needs a tap first), the next tap retries.
+  function noop() {}
+  function createWakeKeeper(env) {
+    var reasons = {};
+    var sentinel = null, pending = null, retryOnTap = false;
+    function lock() { try { return env.wakeLock(); } catch (e) { return null; } }
+    function supported() { var wl = lock(); return !!(wl && typeof wl.request === 'function'); }
+    function wanted() { for (var k in reasons) { if (reasons[k]) return true; } return false; }
+    function release() {
+      if (!sentinel) return;
+      var s = sentinel;
+      sentinel = null;
+      try { var p = s.release(); if (p && typeof p.catch === 'function') p.catch(noop); } catch (e) { /* already gone */ }
+    }
+    function sync() {
+      if (sentinel && sentinel.released) sentinel = null;
+      if (!wanted()) { release(); return; }
+      if (!env.visible() || sentinel || pending || !supported()) return;
+      var req;
+      try { req = lock().request('screen'); } catch (e) { retryOnTap = true; return; }
+      pending = Promise.resolve(req).then(function (s) {
+        pending = null;
+        if (!s) return;
+        if (!wanted()) { try { s.release(); } catch (e) { /* ignore */ } return; }
+        sentinel = s;
+        retryOnTap = false;
+        if (typeof s.addEventListener === 'function') {
+          s.addEventListener('release', function () { if (sentinel === s) sentinel = null; });
+        }
+        if (!env.visible()) sync();
+      }, function () { pending = null; retryOnTap = true; });
+      return pending;
+    }
+    return {
+      set: function (on, reason) {
+        if (on) reasons[reason || 'default'] = true;
+        else if (reason) delete reasons[reason];
+        else reasons = {};
+        sync();
+        return supported();
+      },
+      reset: function () { reasons = {}; sync(); },
+      sync: sync,
+      onTap: function () { if (retryOnTap && wanted()) { retryOnTap = false; sync(); } },
+      isAwake: function () { return !!sentinel && !sentinel.released; },
+      wanted: wanted,
+      supported: supported,
+      pending: function () { return pending; }
+    };
+  }
+
+  var wake = createWakeKeeper({
+    wakeLock: function () { return root.navigator && root.navigator.wakeLock; },
+    visible: function () { return typeof document === 'undefined' || !document.visibilityState || document.visibilityState === 'visible'; }
+  });
+
+  // keepAwake(true|false, reason?) — keep the phone's screen on during a solve, a scan or drills.
+  // Silently does nothing where the Screen Wake Lock API is missing. Every route change resets it, so
+  // a screen only has to ask in mount() (and may say false when it no longer needs it). Overlays that
+  // live on top of another screen (e.g. a rescan) should pass a reason, so their false doesn't
+  // switch off the screen underneath. Returns true when the browser supports it.
+  function keepAwake(on, reason) { return wake.set(!!on, reason); }
+
+  // ================================================================ device & home-screen app
+  function isStandalone() {
+    try {
+      if (root.matchMedia && (root.matchMedia('(display-mode: standalone)').matches || root.matchMedia('(display-mode: fullscreen)').matches)) return true;
+    } catch (e) { /* ignore */ }
+    return !!(root.navigator && root.navigator.standalone === true);
+  }
+
+  // Pure: what kind of device/browser from the user agent (for the "Add to Home Screen" steps).
+  function platformFrom(ua, maxTouchPoints, platform) {
+    ua = String(ua || '');
+    var iPadOS = /Macintosh/.test(ua) && (maxTouchPoints || 0) > 1; // iPads ask for the desktop site
+    var ios = /iPhone|iPad|iPod/.test(ua) || iPadOS || /^iP(hone|ad|od)/.test(String(platform || ''));
+    var android = /Android/.test(ua);
+    var browser = ios
+      ? (/CriOS\//.test(ua) ? 'chrome' : /FxiOS\//.test(ua) ? 'firefox' : /EdgiOS\//.test(ua) ? 'edge' : /Safari\//.test(ua) ? 'safari' : 'other')
+      : (/Edg\//.test(ua) ? 'edge' : /Chrome\//.test(ua) ? 'chrome' : /Firefox\//.test(ua) ? 'firefox' : /Safari\//.test(ua) ? 'safari' : 'other');
+    return { ios: ios, ipad: /iPad/.test(ua) || iPadOS, android: android, phone: ios || android || /Mobile/.test(ua), browser: browser };
+  }
+
+  function platform() {
+    var nav = root.navigator || {};
+    var p = platformFrom(nav.userAgent, nav.maxTouchPoints, nav.platform);
+    p.standalone = isStandalone();
+    p.touch = (function () { try { return !!(root.matchMedia && root.matchMedia('(pointer: coarse)').matches); } catch (e) { return false; } })();
+    return p;
+  }
+
+  // ================================================================ offline copy (service worker)
+  // The hosted copy that phones use (GitHub Pages). Same files as this folder.
+  var HOSTED_URL = 'https://pmcgroark.github.io/cube-coach/';
+
+  // Pure: what to do about the service worker at a location ({ protocol, hostname, search }).
+  //   'register'    https (or ?sw=1 on localhost): keep an offline copy
+  //   'dev'         localhost / 127.0.0.1 without ?sw=1: never cache (remove any old copy)
+  //   'off'         ?sw=0: remove any offline copy
+  //   'insecure'    plain http on another host: browsers don't allow it
+  //   'unavailable' file:// and anything else
+  function swDecision(loc) {
+    loc = loc || {};
+    var proto = String(loc.protocol || '').toLowerCase();
+    var host = String(loc.hostname || '').toLowerCase();
+    var m = /[?&]sw=([^&#]*)/.exec(String(loc.search || ''));
+    var flag = m ? m[1].toLowerCase() : null;
+    var local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1' || /\.localhost$/.test(host);
+    if (proto !== 'https:' && proto !== 'http:') return 'unavailable';
+    if (flag === '0' || flag === 'off' || flag === 'false') return 'off';
+    if (local) return (flag === '1' || flag === 'on' || flag === 'true') ? 'register' : 'dev';
+    return proto === 'https:' ? 'register' : 'insecure';
+  }
+
+  var sw = { decision: null, reg: null, updateReady: false, reloading: false, lastCheck: 0, toast: null, error: null };
+  var SW_RECHECK_MS = 30 * 60 * 1000;
+
+  function swChanged() { dispatch('cc:sw', { decision: sw.decision, updateReady: sw.updateReady }); }
+
+  function onUpdateReady() {
+    if (sw.updateReady && sw.toast) return;
+    sw.updateReady = true;
+    sw.toast = toast('A new version is ready —', { ms: Infinity, action: { label: 'Reload', onClick: applyUpdate } });
+    swChanged();
+  }
+
+  // Switch to the waiting version and reload (the "Reload" button on the update toast).
+  function applyUpdate() {
+    var w = sw.reg && sw.reg.waiting;
+    if (!w) { try { root.location.reload(); } catch (e) { /* ignore */ } return; }
+    sw.reloading = true;
+    try { w.postMessage({ type: 'SKIP_WAITING' }); } catch (e) { /* ignore */ }
+    setTimeout(function () { if (sw.reloading) { sw.reloading = false; root.location.reload(); } }, 4000);
+  }
+
+  function trackWorker(worker) {
+    if (!worker || worker.__ccTracked) return;
+    worker.__ccTracked = true;
+    worker.addEventListener('statechange', function () {
+      if (worker.state === 'installed' && root.navigator.serviceWorker.controller) onUpdateReady();
+      swChanged();
+    });
+  }
+
+  function removeOfflineCopy() {
+    var nav = root.navigator;
+    var base = new URL('./', root.location.href).href;
+    var wasControlled = !!(nav.serviceWorker && nav.serviceWorker.controller);
+    var jobs = [];
+    if (nav.serviceWorker && nav.serviceWorker.getRegistrations) {
+      jobs.push(nav.serviceWorker.getRegistrations().then(function (regs) {
+        return Promise.all(regs.filter(function (r) { return String(r.scope).indexOf(base) === 0 || base.indexOf(String(r.scope)) === 0; })
+          .map(function (r) { return r.unregister(); }));
+      }));
+    }
+    if (root.caches && root.caches.keys) {
+      jobs.push(root.caches.keys().then(function (names) {
+        return Promise.all(names.filter(function (n) { return n.indexOf('cube-coach-') === 0; }).map(function (n) { return root.caches.delete(n); }));
+      }));
+    }
+    Promise.all(jobs).then(function () {
+      // This page itself came from an old offline copy: load it fresh, once.
+      if (!wasControlled) return;
+      var key = 'cc-sw-removed-reload';
+      try { if (root.sessionStorage.getItem(key)) return; root.sessionStorage.setItem(key, '1'); } catch (e) { return; }
+      root.location.reload();
+    }).catch(function (e) { console.warn('[CC] could not remove the offline copy', e); });
+  }
+
+  function setupServiceWorker() {
+    var nav = root.navigator;
+    sw.decision = swDecision(root.location);
+    if (!nav || !nav.serviceWorker) {
+      if (sw.decision === 'register') sw.decision = 'unsupported';
+      return;
+    }
+    if (sw.decision === 'dev' || sw.decision === 'off') { removeOfflineCopy(); return; }
+    if (sw.decision !== 'register') return;
+    nav.serviceWorker.addEventListener('controllerchange', function () {
+      if (sw.reloading) { sw.reloading = false; root.location.reload(); return; }
+      swChanged();
+    });
+    nav.serviceWorker.register('sw.js', { scope: './', updateViaCache: 'none' }).then(function (reg) {
+      sw.reg = reg;
+      sw.lastCheck = Date.now();
+      if (reg.waiting && nav.serviceWorker.controller) onUpdateReady();
+      trackWorker(reg.installing);
+      trackWorker(reg.waiting);
+      reg.addEventListener('updatefound', function () { trackWorker(reg.installing); swChanged(); });
+      swChanged();
+    }, function (err) {
+      sw.error = err;
+      console.warn('[CC] offline copy not available:', err && err.message);
+      swChanged();
+    });
+    // A home-screen app can stay open for days: look for a new version when it comes back.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible' || !sw.reg || Date.now() - sw.lastCheck < SW_RECHECK_MS) return;
+      sw.lastCheck = Date.now();
+      try { var p = sw.reg.update(); if (p && p.catch) p.catch(noop); } catch (e) { /* ignore */ }
+    });
+    // Ask the browser not to clear our storage (progress) under storage pressure.
+    try {
+      if (nav.storage && nav.storage.persist) {
+        nav.storage.persisted().then(function (yes) { return yes || nav.storage.persist(); }).catch(noop);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // offlineStatus() -> Promise<{ decision, supported, registered, controlled, ready, cached, total,
+  //   version, updateReady, installing }> — for Settings › On your phone.
+  function offlineStatus() {
+    var nav = root.navigator;
+    var base = {
+      decision: sw.decision || swDecision(root.location), supported: !!(nav && nav.serviceWorker),
+      registered: false, controlled: !!(nav && nav.serviceWorker && nav.serviceWorker.controller),
+      ready: false, cached: 0, total: 0, version: null, updateReady: sw.updateReady, installing: false,
+      error: sw.error ? String(sw.error.message || sw.error) : null
+    };
+    if (!base.supported || base.decision !== 'register') return Promise.resolve(base);
+    var getReg = sw.reg ? Promise.resolve(sw.reg) : nav.serviceWorker.getRegistration();
+    return getReg.then(function (reg) {
+      if (!reg) return base;
+      base.registered = true;
+      base.installing = !!reg.installing && !reg.active;
+      var worker = reg.active;
+      if (!worker) return base;
+      return new Promise(function (resolve) {
+        var done = false;
+        var timer = setTimeout(function () { if (!done) { done = true; resolve(base); } }, 2500);
+        try {
+          var ch = new MessageChannel();
+          ch.port1.onmessage = function (ev) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            var s = ev.data || {};
+            base.ready = !!s.ready; base.cached = s.cached || 0; base.total = s.total || 0; base.version = s.version || null;
+            resolve(base);
+          };
+          worker.postMessage({ type: 'STATUS' }, [ch.port2]);
+        } catch (e) { done = true; clearTimeout(timer); resolve(base); }
+      });
+    }, function () { return base; });
+  }
+
   // ================================================================ boot
   var lastGlobalErrorToast = 0;
   function onGlobalError(ev) {
@@ -834,7 +1132,7 @@
     }
     document.documentElement.classList.toggle('no-3d', threeMissing || noWebGL);
     if (threeMissing) {
-      notice('The 3D cube couldn’t load (are you offline?). Cube Coach will show a flat cube instead — everything else still works.', { kind: 'warn', id: 'three' });
+      notice('The 3D cube couldn’t load. Cube Coach will show a flat cube instead — everything else still works. Reloading may fix it.', { kind: 'warn', id: 'three' });
     } else if (noWebGL) {
       notice('This browser can’t draw 3D graphics here, so Cube Coach will show a flat cube instead.', { kind: 'warn', id: 'webgl' });
     }
@@ -856,9 +1154,24 @@
     ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'].forEach(function (t) {
       document.addEventListener(t, function () { markActive(); }, { passive: true, capture: true });
     });
+    document.addEventListener('pointerdown', function () { wake.onTap(); }, { passive: true, capture: true });
+    document.addEventListener('visibilitychange', function () { wake.sync(); });
     practiceTimer = setInterval(function () { practiceTick(); }, PRACTICE_TICK_MS);
 
+    // Screens that loaded before CC.App existed queue themselves on CC.PendingScreens.
+    var pending = CC().PendingScreens;
+    if (Array.isArray(pending)) {
+      pending.splice(0).forEach(function (p) {
+        if (p && p[0] && !screens[p[0]]) { try { registerScreen(p[0], p[1]); } catch (e) { console.error('[CC] could not register screen', p[0], e); } }
+      });
+    }
+
+    var html = document.documentElement;
+    html.classList.toggle('is-standalone', isStandalone());
+    try { html.classList.toggle('is-ios', platform().ios); } catch (e) { /* ignore */ }
+
     check3D();
+    try { setupServiceWorker(); } catch (e) { console.warn('[CC] service worker setup failed', e); }
 
     var r = parseHash(root.location.hash);
     var id = r.id || 'home';
@@ -886,11 +1199,23 @@
     markActive: markActive,
     boot: boot,
     screens: function () { return Object.keys(screens); },
+    // phone / installable app
+    keepAwake: keepAwake,
+    isAwake: function () { return wake.isAwake(); },
+    isStandalone: isStandalone,
+    platform: platform,
+    HOSTED_URL: HOSTED_URL,
+    offlineStatus: offlineStatus,
+    applyUpdate: applyUpdate,
+    get updateReady() { return sw.updateReady; },
+    swDecision: swDecision,
     // exposed for tests / debugging
     _parseHash: parseHash,
     _buildHash: buildHash,
     _practiceTick: practiceTick,
     _fallbackData: fallbackData,
+    _createWakeKeeper: createWakeKeeper,
+    _platformFrom: platformFrom,
     _stopPracticeTimer: function () { if (practiceTimer) clearInterval(practiceTimer); practiceTimer = null; }
   };
 

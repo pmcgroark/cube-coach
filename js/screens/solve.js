@@ -870,7 +870,10 @@
         h('p', { class: 'cc-solve-why' }, whyText(id, lvl)),
         lvl >= 1 && meta.goal ? h('p', { class: 'm-0' }, h('strong', null, 'Goal: '), meta.goal) : null,
         lvl === 1 && meta.tagline ? h('p', { class: 'small muted m-0' }, 'Remember: ' + meta.tagline) : null,
-        rotateFirst ? UI.callout('tip', null, 'First, hold the cube with ', UI.colourDot('Y'), ' YELLOW on top.') : null);
+        rotateFirst ? UI.callout('tip', null, 'First, hold the cube with ', UI.colourDot('Y'), ' YELLOW on top.') : null,
+        id === 'middle' && !P.timed && CC.Gym ? h('div', { class: 'row row-sm' },
+          h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onClick: function () { leave({ id: 'gym', params: {} }); } },
+            icon('zap', 16), 'Stuck? Practise in the Gym')) : null);
       return card;
     }
 
@@ -2064,26 +2067,32 @@
       });
     }
 
-    function leave() {
+    // leave() goes home; leave({ id, params }) goes there instead (e.g. the Middle Layer Gym).
+    // Either way a solve in progress is confirmed first and saved as not finished.
+    function leave(dest) {
       active();
+      var toGym = !!(dest && dest.id === 'gym');
+      var to = dest && typeof dest.id === 'string' ? dest : { id: 'home', params: {} };
+      var go = toGym ? 'Go to the gym' : 'Leave';
       if (S.phase === 'solving' && !S.finished) {
         var done = doneIds().length - S.initialDone.length;
         pauseClocks();
         App.modal({
-          title: 'Leave this solve?',
-          body: done > 0 ? 'The solve is saved as not finished. The stages you finished still count toward your progress.' : 'The solve is saved as not finished.',
-          actions: [{ label: 'Leave', danger: true }, { label: 'Keep going', primary: true }]
+          title: toGym ? 'Leave this solve for the gym?' : 'Leave this solve?',
+          body: (done > 0 ? 'The solve is saved as not finished. The stages you finished still count toward your progress.' : 'The solve is saved as not finished.') +
+            (toGym ? ' When the gym exercises feel easy, start a fresh middle-layer practice from there.' : ''),
+          actions: [{ label: go, danger: true }, { label: 'Keep going', primary: true }]
         }).then(function (l) {
           resumeClocks();
-          if (l === 'Leave' && !destroyed && !S.finished) {
+          if (l === go && !destroyed && !S.finished) {
             S.leaving = true;
             finish(false, { silent: true });
-            App.go('home');
+            App.go(to.id, to.params || {});
           }
         });
         return;
       }
-      App.go('home');
+      App.go(to.id, to.params || {});
     }
 
     // ---------------------------------------------------------------- finish & record

@@ -25,8 +25,19 @@
  * top, so each face still arrives in its own orientation, just in the other slot; the session
  * accepts either at those two steps and swaps them once both are in (the redder centre is RED).
  *
- * Only the on-screen preview is mirrored (selfie style). Sampling always reads the raw frame;
- * the overlay mirrors cell columns so each swatch sits on the sticker the learner sees.
+ * Only the on-screen preview is mirrored (selfie style), and only for a front-facing camera.
+ * Sampling always reads the raw frame; the overlay mirrors cell columns so each swatch sits on
+ * the sticker the learner sees.
+ *
+ * PHONES. On a phone the learner usually points the REAR camera at the cube (facingMode
+ * 'environment'). The camera still looks at the shown face from outside, upright, with its own
+ * right on the right of the raw image, so raw cell (row, col) is still sticker (face, row, col):
+ * the mapping above is unchanged. What changes is where the LEARNER is: behind the camera, seeing
+ * the face themselves, so the next face is on their RIGHT (SCAN_ORDER[i].point / .tipRear), and the
+ * preview is not mirrored (it already matches what they see). The controller asks for the camera
+ * with facingMode {ideal} and falls back to plainer constraints when one fails (iOS is picky),
+ * stops the camera while the page is in the background and reopens it on return, and reports
+ * 'blocked' when the browser wants a tap before the video may play.
  *
  * Pure parts (colour maths, Hungarian assignment, classifyCube, sampleCells, the auto-capture
  * session) run in node. The camera controller and the fake camera need a browser and touch
@@ -42,20 +53,39 @@
   var NAME = { W: 'WHITE', Y: 'YELLOW', G: 'GREEN', B: 'BLUE', R: 'RED', O: 'ORANGE' };
   var FALLBACK_HEX = { W: '#f5f5f0', Y: '#ffd500', G: '#009e60', B: '#0051ba', R: '#c8102e', O: '#ff6a13' };
 
+  // say / tip: the learner FACES the camera (laptop webcam, or a phone's front camera), so the next
+  // face is on their LEFT. point / tipRear: the learner points a phone's REAR camera at the cube and
+  // sees the face themselves, from the camera's side, so the next face is on their RIGHT and a quarter
+  // turn to the left brings it round. The camera's raw frame is the same in both cases (the face seen
+  // head-on from outside, upright), so the facelet mapping does not change. Both checked in the tests.
   var SCAN_ORDER = [
     { face: 'F', center: 'G', up: 'W', say: 'Show the GREEN centre to the camera, WHITE on top',
-      tip: 'Hold the cube with WHITE on top and GREEN facing the camera. Fill the square with that face.' },
+      point: 'Point the camera at the GREEN centre, WHITE on top',
+      tip: 'Hold the cube with WHITE on top and GREEN facing the camera. Fill the square with that face.',
+      tipRear: 'Hold the cube with WHITE on top and GREEN facing you, then point the camera at the GREEN face so it fills the square.' },
     { face: 'R', center: 'R', up: 'W', say: 'Show the RED centre to the camera, WHITE on top',
-      tip: 'Keep WHITE on top. RED is on your left-hand side: turn the cube a quarter turn so RED faces the camera.' },
+      point: 'Point the camera at the RED centre, WHITE on top',
+      tip: 'Keep WHITE on top. RED is on your left-hand side: turn the cube a quarter turn so RED faces the camera.',
+      tipRear: 'Keep WHITE on top. Turn the cube a quarter turn to the left: RED, on your right, comes round to face you and the camera.' },
     { face: 'B', center: 'B', up: 'W', say: 'Show the BLUE centre to the camera, WHITE on top',
-      tip: 'Keep WHITE on top and turn the same way again: BLUE (now on your left) comes round to face the camera.' },
+      point: 'Point the camera at the BLUE centre, WHITE on top',
+      tip: 'Keep WHITE on top and turn the same way again: BLUE (now on your left) comes round to face the camera.',
+      tipRear: 'Keep WHITE on top and turn a quarter turn to the left again: BLUE (now on your right) comes round to face the camera.' },
     { face: 'L', center: 'O', up: 'W', say: 'Show the ORANGE centre to the camera, WHITE on top',
-      tip: 'Keep WHITE on top and turn the same way once more: ORANGE comes round to face the camera.' },
+      point: 'Point the camera at the ORANGE centre, WHITE on top',
+      tip: 'Keep WHITE on top and turn the same way once more: ORANGE comes round to face the camera.',
+      tipRear: 'Same again, a quarter turn to the left: ORANGE comes round to face the camera.' },
     { face: 'U', center: 'W', up: 'B', say: 'Show the WHITE centre to the camera, BLUE on top',
-      tip: 'Turn the same way once more so GREEN faces the camera (white on top), then tip the top of the cube toward the camera: WHITE now faces it and BLUE is on top.' },
+      point: 'Point the camera at the WHITE centre, BLUE on top',
+      tip: 'Turn the same way once more so GREEN faces the camera (white on top), then tip the top of the cube toward the camera: WHITE now faces it and BLUE is on top.',
+      tipRear: 'Turn a quarter turn to the left once more so GREEN faces you, then tip the top of the cube towards you: WHITE faces the camera and BLUE is on top.' },
     { face: 'D', center: 'Y', up: 'G', say: 'Show the YELLOW centre to the camera, GREEN on top',
-      tip: 'Flip the cube over, top over bottom, so YELLOW faces the camera and GREEN is on top.' }
+      point: 'Point the camera at the YELLOW centre, GREEN on top',
+      tip: 'Flip the cube over, top over bottom, so YELLOW faces the camera and GREEN is on top.',
+      tipRear: 'Flip the cube over, top over bottom: YELLOW faces the camera and GREEN is on top.' }
   ];
+  // the instruction for a step, worded for the camera in use ('environment' = a phone's rear camera)
+  function sayFor(entry, facing) { return entry ? (facing === 'environment' ? entry.point : entry.say) : ''; }
 
   // Typical sticker colours as a webcam sees them under neutral light (sRGB 0..255).
   var DEFAULT_RGB = {
@@ -654,7 +684,8 @@
     opts = opts || {};
     var S = {
       step: 0, captured: [null, null, null, null, null, null], auto: opts.autoCapture !== false,
-      armed: true, anchor: null, stableSince: 0, last: null, lastCap: null, refs: null, result: null
+      armed: true, anchor: null, stableSince: 0, last: null, lastCap: null, refs: null, result: null,
+      facing: opts.facing === 'environment' ? 'environment' : 'user'     // only changes the wording of the messages
     };
     function refs() { if (!S.refs) S.refs = liveRefs(S.captured); return S.refs; }
     function nextStep() { for (var i = 0; i < 6; i++) if (!S.captured[i]) return i; return 6; }
@@ -700,16 +731,16 @@
 
     function message(a, cc, stability) {
       if (S.step >= 6) return 'All six faces scanned.';
-      var exp = SCAN_ORDER[S.step];
+      var say = sayFor(SCAN_ORDER[S.step], S.facing);
       if (a.brightness < 35) return 'It is too dark. Turn on a light or face a window.';
       // Right after a capture, say so; if the same face is still showing ~1.5 s later, fall through
       // to the centre check, which tells the learner which face to show instead.
       if (!S.armed && (!S.lastCap || S.clock - S.lastCap.at < 1500)) return 'Got it. Now turn to the next face.';
-      if (a.nPlausible < 5 || a.flat) return exp.say + ', filling the square.';
-      if (a.nUniform < 8) return 'Hold still. If there is glare, tilt the cube slightly.';
+      if (a.nPlausible < 5 || a.flat) return say + ', filling the square.';
+      if (a.nUniform < 8) return S.facing === 'environment' ? 'Hold still. If there is glare, tilt the cube or the phone slightly.' : 'Hold still. If there is glare, tilt the cube slightly.';
       if (!cc.ok) {
-        if (cc.sameAs) return 'You already scanned the ' + NAME[cc.sameAs] + ' face. ' + exp.say + '.';
-        return 'That centre looks ' + NAME[a.cls[4].letter] + '. ' + exp.say + '.';
+        if (cc.sameAs) return 'You already scanned the ' + NAME[cc.sameAs] + ' face. ' + say + '.';
+        return 'That centre looks ' + NAME[a.cls[4].letter] + '. ' + say + '.';
       }
       if (a.nPlausible < 7) return 'Line the stickers up with the squares.';
       if (!S.auto) return 'Looks good. Press Capture.';
@@ -809,6 +840,8 @@
         S.anchor = null; S.lastCap = null; S.refs = null; S.result = null;
       },
       setAutoCapture: function (b) { S.auto = !!b; },
+      setFacing: function (f) { S.facing = f === 'environment' ? 'environment' : 'user'; },
+      get facing() { return S.facing; },
       result: function () { return S.result; },
       faces: faces,
       get step() { return S.step; },
@@ -818,17 +851,84 @@
 
   // ------------------------------------------------------------------ camera support
   var CAMERA_MESSAGES = {
-    denied: 'The camera is blocked for this page. In Chrome: click the camera (or padlock) icon in the address bar, choose Allow, then reload the page. ' +
+    denied: 'The camera is blocked for this page. On a computer, in Chrome: click the camera (or padlock) icon in the address bar, choose Allow, then reload the page. ' +
       'In Safari: open the Safari menu > Settings for This Website > Camera > Allow. Still blocked? Open Apple menu > System Settings > ' +
-      'Privacy & Security > Camera, switch your browser on, then quit and reopen the browser.',
+      'Privacy & Security > Camera, switch your browser on, then quit and reopen the browser. ' +
+      'On an iPhone: open the Settings app > Chrome (or Safari) > Camera and switch it on; in Safari you can also tap aA in the address bar > Website Settings > Camera > Allow. Then reload the page.',
     notfound: 'No camera was found. Check that the camera is connected and not covered, or pick another camera. You can also use the on-screen virtual cube.',
-    insecure: 'The camera only works when Cube Coach is opened from http://localhost:8765, not straight from the file (file://). ' +
-      'Double-click "Start Cube Coach.command" (or run python3 -m http.server 8765 in the cube-coach folder) and open http://localhost:8765.',
+    insecure: 'The camera only works on a secure page: open Cube Coach from its https web address, or from http://localhost:8765 on this computer, not straight from the file (file://). ' +
+      'On a computer, double-click "Start Cube Coach.command" (or run python3 -m http.server 8765 in the cube-coach folder) and open http://localhost:8765.',
     unsupported: 'This browser cannot use the camera. Use a recent Chrome, Safari, Edge or Firefox, or use the on-screen virtual cube.',
-    busy: 'The camera is being used by another app (FaceTime, Zoom, Teams, Photo Booth) or another browser tab. Close it, then try again.',
+    busy: 'The camera is being used by another app (FaceTime, Zoom, Teams, Photo Booth, a phone call) or another browser tab. Close it, then try again.',
     other: 'The camera could not start. Reload the page and try again, or pick another camera.',
     ended: 'The camera stopped sending pictures. Check that it is still connected and that no other app (FaceTime, Zoom, Teams) has taken it, then start the camera again.'
   };
+
+  // ------------------------------------------------------------------ phones and camera choice (pure)
+  // What kind of device is this? env (all optional, for tests): { userAgent, maxTouchPoints, coarse
+  // (matchMedia '(pointer: coarse)'), screenWidth, screenHeight }; read from the browser when omitted.
+  // A phone: an iPhone / Android-phone user agent, or a touch screen with a narrow short side.
+  function browserEnv() {
+    var env = { userAgent: '', maxTouchPoints: 0, coarse: false, screenWidth: 0, screenHeight: 0 };
+    try {
+      if (typeof navigator !== 'undefined') { env.userAgent = navigator.userAgent || ''; env.maxTouchPoints = navigator.maxTouchPoints || 0; }
+      if (typeof window !== 'undefined') {
+        env.coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+        if (window.screen) { env.screenWidth = window.screen.width || 0; env.screenHeight = window.screen.height || 0; }
+        if (!env.screenWidth) { env.screenWidth = window.innerWidth || 0; env.screenHeight = window.innerHeight || 0; }
+      }
+    } catch (e) { /* keep the defaults */ }
+    return env;
+  }
+  function deviceInfo(env) {
+    env = env || browserEnv();
+    var ua = String(env.userAgent || ''), touchPoints = +env.maxTouchPoints || 0;
+    var ipadOS = /Macintosh/i.test(ua) && touchPoints > 1;                 // iPadOS asks for the desktop site
+    var ios = /iPhone|iPad|iPod/i.test(ua) || ipadOS;
+    var android = /Android/i.test(ua);
+    var phoneUA = /iPhone|iPod|Windows Phone|IEMobile/i.test(ua) || (android && /Mobile/i.test(ua));
+    var tablet = !phoneUA && (/iPad|Tablet/i.test(ua) || ipadOS || (android && !/Mobile/i.test(ua)));
+    var touch = touchPoints > 0 || !!env.coarse;
+    var sw = +env.screenWidth || 0, sh = +env.screenHeight || 0;
+    var shortSide = sw && sh ? Math.min(sw, sh) : Infinity;
+    var phone = phoneUA || (!tablet && touch && shortSide <= 600);
+    return { phone: phone, tablet: tablet, ios: ios, android: android, touch: touch };
+  }
+  function isPhone(env) { return deviceInfo(env).phone; }
+  // The camera to start with: the rear one on a phone (point it at the cube), the front one elsewhere.
+  function defaultFacing(env) { return isPhone(env) ? 'environment' : 'user'; }
+
+  // getUserMedia constraints to try, best first. iOS (and some Android phones) reject combinations
+  // they can't meet, so the asks get plainer: a remembered camera -> facingMode {ideal} with a
+  // resolution -> facingMode alone -> any camera. facingMode is always {ideal}, never exact.
+  function cameraConstraints(o) {
+    o = o || {};
+    var facing = o.facing === 'environment' || o.facing === 'user' ? o.facing : null;
+    function size(v) { v.width = { ideal: 1280 }; v.height = { ideal: 720 }; return v; }
+    var list = [];
+    if (o.deviceId) list.push({ video: size({ deviceId: { exact: o.deviceId } }), audio: false });
+    list.push({ video: size(facing ? { facingMode: { ideal: facing } } : {}), audio: false });
+    if (facing) list.push({ video: { facingMode: { ideal: facing } }, audio: false });
+    list.push({ video: true, audio: false });
+    return list;
+  }
+  // Worth trying plainer constraints after this getUserMedia error? Not when the learner (or the
+  // browser) said no: asking again would only repeat the refusal.
+  function retryCamera(e) {
+    var name = String((e && (e.name || e.code)) || '');
+    if (/NotAllowed|PermissionDenied|Security/i.test(name)) return false;
+    return /Overconstrained|ConstraintNotSatisfied|NotFound|DevicesNotFound|NotReadable|TrackStart|Abort|TypeError|NotSupported/i.test(name) || !name;
+  }
+  // Which way does this camera face? From the track's settings, else its label ("Back Camera",
+  // "FaceTime HD Camera"), else what was asked for. Laptop webcams report nothing: 'user'.
+  function guessFacing(settings, label, requested) {
+    var f = settings && settings.facingMode;
+    if (f === 'user' || f === 'environment') return f;
+    label = String(label || '');
+    if (/\b(back|rear|environment|world)\b/i.test(label)) return 'environment';
+    if (/\b(front|user|facetime|selfie|face)\b/i.test(label)) return 'user';
+    return requested === 'environment' ? 'environment' : 'user';
+  }
 
   function pageIsInsecure() {
     if (typeof window === 'undefined') return false;
@@ -953,7 +1053,7 @@
     }
     // tiny HUD: step and the centre colour wanted
     if (o.hud && info && info.expected) {
-      var fs = Math.max(12, Math.round(H * 0.032));
+      var fs = Math.max(12, Math.round(Math.min(W, H) * 0.032));     // a portrait phone frame is tall: size by the short side
       ctx.font = '600 ' + fs + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
       var label = (info.step + 1) + '/6  ' + NAME[info.expected.center] + ' centre, ' + NAME[info.expected.up] + ' on top';
       var tw = ctx.measureText(label).width, ph = fs * 1.7, px = g.x, py = Math.max(4, g.y - ph - fs * 0.5);
@@ -974,14 +1074,27 @@
   }
 
   // ------------------------------------------------------------------ controller (DOM)
+  /* createController(opts) -> controller. opts: { canvas, mirror:true, autoCapture:true, facing:'user'|'environment',
+   *   onFrame(info), onCapture(step, colours9), onComplete(result), onError(err), onState(state), hud:true, maxWidth, startTimeout,
+   *   statusText:true (write "Camera paused" / "Tap to start the camera" on the canvas; false when the page shows its own) }
+   * mirror: mirror the preview of a FRONT camera (selfie view). A rear camera is never mirrored.
+   * facing: the camera to ask for (start) or the way a stream passed to useStream faces.
+   * onState(state): 'starting' | 'live' | 'paused' (page in the background: own camera released, reopened
+   *   on return; or the camera was interrupted) | 'blocked' (the browser wants a tap before the video may
+   *   play, or the camera could not reopen by itself: call resume() from a tap) | 'idle' (stopped). */
   function createController(opts) {
     opts = opts || {};
     var canvas = opts.canvas || null, ctx = canvas ? canvas.getContext('2d') : null;
-    var mirror = opts.mirror !== false;
-    var session = createSession({ autoCapture: opts.autoCapture !== false });
+    var mirrorPref = opts.mirror !== false;
+    var requested = opts.facing === 'environment' ? 'environment' : 'user';
+    var facing = requested;               // the way the camera in use faces (read from its track when it says)
+    var session = createSession({ autoCapture: opts.autoCapture !== false, facing: facing });
     var maxWidth = opts.maxWidth || 1280;
     var video = null, stream = null, ownStream = false, raf = 0, running = false, token = 0;
-    var sCanvas = null, sCtx = null, flashAt = -1e9, lastInfo = null;
+    var sCanvas = null, sCtx = null, flashAt = -1e9, lastInfo = null, lastTick = -1e9;
+    var lastReq = null;                   // { deviceId, facing } of the last start(), to reopen the same camera
+    var suspended = null;                 // while paused: { own, stream, req, auto }
+    var blocked = false, shownAt = -1e9, visHooked = false, camState = 'idle', hud = opts.hud !== false;
 
     function emit(name, a, b) {
       if (typeof opts[name] !== 'function') return;
@@ -989,13 +1102,20 @@
     }
     function fail(err) { emit('onError', err); return Promise.reject(err); }
     function now() { return (typeof performance !== 'undefined' ? performance : Date).now(); }
+    function setState(s) { if (s === camState) return; camState = s; emit('onState', s); }
+    function docHidden() { return typeof document !== 'undefined' && document.hidden === true; }
+    function mirrored() { return mirrorPref && facing !== 'environment'; }
 
     function ensureVideo() {
       if (video) return video;
       video = document.createElement('video');
+      // iOS: inline (never full screen) and muted, so it may play without a tap
       video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
       video.setAttribute('muted', '');
+      video.setAttribute('autoplay', '');
       video.muted = true;
+      video.playsInline = true;
       video.autoplay = true;
       // kept in the document (some browsers will not decode a detached video) but invisible
       video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1;';
@@ -1007,65 +1127,145 @@
       if (stream && ownStream && stream.getTracks) stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) { /* ignore */ } });
       stream = null; ownStream = false;
     }
+    function currentTrack() { return stream && stream.getVideoTracks ? stream.getVideoTracks()[0] || null : null; }
+    function trackSettings(t) { try { return (t && t.getSettings && t.getSettings()) || {}; } catch (e) { return {}; } }
+    function detectFacing() {
+      var t = currentTrack();
+      facing = t ? guessFacing(trackSettings(t), t.label, requested) : requested;
+      session.setFacing(facing);
+    }
 
     // settles the promise of an attach() still waiting for its first frame (stop() or a new stream)
     var pending = null;
-    function settlePending() { if (pending) pending(null); }
+    function settlePending() { if (pending) pending(null, true); }
 
-    // a camera that is unplugged or taken over by another app ends its track: say so
+    // the page went to the background: release the camera (iOS takes it away anyway) and reopen it on return
+    function onVisibility() {
+      if (docHidden()) { pause(true); return; }
+      shownAt = now();
+      if (suspended && suspended.auto) wake(false);
+      else if (video && stream && video.paused && !suspended) playVideo(token);   // iOS pauses videos in the background
+    }
+    function hookVisibility() {
+      if (visHooked || typeof document === 'undefined' || !document.addEventListener) return;
+      document.addEventListener('visibilitychange', onVisibility);
+      visHooked = true;
+    }
+    function unhookVisibility() {
+      if (!visHooked) return;
+      try { document.removeEventListener('visibilitychange', onVisibility); } catch (e) { /* ignore */ }
+      visHooked = false;
+    }
+
+    // a camera that is unplugged or taken over by another app ends its track: say so. One taken away
+    // while the page was in the background (a phone does that) is reopened instead.
     function watchTracks(st, my) {
       if (!st || !st.getVideoTracks) return;
       st.getVideoTracks().forEach(function (t) {
         if (!t || !t.addEventListener) return;
         t.addEventListener('ended', function () {
           if (my !== token) return;   // stop() does not fire 'ended', but a replaced stream might
+          if (ownStream && (docHidden() || now() - shownAt < 3000)) {     // in the background, or just back from it
+            pause(true);
+            if (!docHidden()) wake(false);
+            return;
+          }
           emit('onError', { code: 'notfound', name: 'Ended', message: CAMERA_MESSAGES.ended });
         });
+        // interrupted (a call, another app): frames stop until it is unmuted
+        t.addEventListener('mute', function () { if (my === token && !suspended) setState('paused'); });
+        t.addEventListener('unmute', function () {
+          if (my !== token || suspended) return;
+          if (video && video.paused) playVideo(my); else setState(blocked ? 'blocked' : 'live');
+        });
+      });
+    }
+
+    // play the hidden video; a refusal (iOS wants a tap first) becomes the 'blocked' state
+    function playVideo(my) {
+      var v = video, pp = null;
+      if (!v) return Promise.resolve(false);
+      try { pp = v.play(); } catch (e) { pp = null; }
+      if (!pp || typeof pp.then !== 'function') return Promise.resolve(true);
+      return pp.then(function () {
+        if (my !== token) return false;
+        blocked = false;
+        setState('live');
+        return true;
+      }, function (e) {
+        if (my !== token) return false;
+        if (e && /NotAllowed/i.test(String(e.name || ''))) { blocked = true; setState('blocked'); }
+        return false;
       });
     }
 
     function attach(st, own) {
       stopStream();
       settlePending();
-      stream = st; ownStream = own;
+      stream = st; ownStream = own; blocked = false; suspended = null;
       var v = ensureVideo(), my = ++token;
       v.srcObject = st;
+      detectFacing();
       watchTracks(st, my);
+      hookVisibility();
       startLoop();
       return new Promise(function (resolve, reject) {
         var timer = 0;
-        function finish(err) {
+        function finish(err, cancelled) {
           if (pending !== finish) return;
           pending = null;
           clearTimeout(timer);
           v.removeEventListener('loadeddata', onData);
-          if (err) { emit('onError', err); reject(err); } else resolve();
+          if (cancelled) { resolve(); return; }
+          if (err) { emit('onError', err); reject(err); return; }
+          if (!blocked) setState('live');
+          resolve();
         }
         function onData() { if (my === token) finish(null); }
         pending = finish;
         v.addEventListener('loadeddata', onData);
         if (v.readyState >= 2) finish(null);
-        var pp = v.play();
-        if (pp && pp.then) pp.then(onData, function () { /* loadeddata or the timeout decides */ });
+        // started, or waiting for a tap: either way nobody should wait for the timeout
+        playVideo(my).then(function (ok) { if (my === token && (ok || blocked)) finish(null); });
         timer = setTimeout(function () {
           finish({ code: 'busy', message: 'The camera is on but no picture is arriving. ' + CAMERA_MESSAGES.busy, name: 'Timeout' });
         }, opts.startTimeout || 10000);
       });
     }
 
-    function start(deviceId) {
+    function errName(e) { return String((e && (e.name || e.code)) || ''); }
+
+    // start(deviceId?, { facing? }) — opens a camera: the remembered one, else the one facing that way
+    // (front 'user' / rear 'environment'), trying plainer constraints when the browser rejects one.
+    function start(deviceId, o) {
+      o = o || {};
       var sup = isSupported();
       if (!sup.ok) return fail({ code: sup.code, message: sup.reason, name: 'Unsupported' });
-      var v = { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' };
-      if (deviceId) { v.deviceId = { exact: deviceId }; delete v.facingMode; }
+      if (o.facing === 'user' || o.facing === 'environment') requested = o.facing;
+      var req = { deviceId: deviceId || null, facing: requested };
+      lastReq = req;
+      suspended = null; blocked = false;
       var my = ++token;
-      return navigator.mediaDevices.getUserMedia({ video: v, audio: false }).then(function (st) {
-        if (my !== token) { st.getTracks().forEach(function (t) { t.stop(); }); return; } // stop() was called meanwhile
-        return attach(st, true);
-      }, function (e) {
-        if (my !== token) return;   // stopped (or restarted) meanwhile: nobody is waiting for this error
-        return fail(mapCameraError(e));
-      });
+      settlePending();
+      // a phone opens one camera at a time: release the old one before asking for another
+      if (ownStream) { stopStream(); if (video) video.srcObject = null; }
+      setState('starting');
+      var list = cameraConstraints(req), errs = [];
+      function attempt(i) {
+        return navigator.mediaDevices.getUserMedia(list[i]).then(function (st) {
+          if (my !== token) { st.getTracks().forEach(function (t) { t.stop(); }); return; } // stop() was called meanwhile
+          return attach(st, true);
+        }, function (e) {
+          if (my !== token) return;   // stopped (or restarted) meanwhile: nobody is waiting for this error
+          errs.push(e);
+          if (i + 1 < list.length && retryCamera(e)) return attempt(i + 1);
+          // couldn't reopen by itself after the page came back: wait for a tap (resume) instead of an error
+          if (o.quiet) { suspended = o.quiet; blocked = true; setState('blocked'); return; }
+          var busy = errs.filter(function (x) { return /NotReadable|TrackStart|DeviceInUse/i.test(errName(x)); })[0];
+          return fail(mapCameraError(busy || e));
+        });
+      }
+      return attempt(0);
     }
 
     function stop() {
@@ -1075,12 +1275,44 @@
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       stopStream();
+      suspended = null; blocked = false;
+      unhookVisibility();
       if (video) {
         try { video.pause(); } catch (e) { /* ignore */ }
         video.srcObject = null;
         if (video.parentNode) video.parentNode.removeChild(video);
         video = null;
       }
+      setState('idle');
+    }
+
+    // pause(): stop reading frames and release an own camera (kept: the faces scanned so far)
+    function pause(auto) {
+      if (!stream || suspended) return false;
+      var t = currentTrack(), id = trackSettings(t).deviceId || (lastReq && lastReq.deviceId) || null;
+      suspended = { own: ownStream, stream: ownStream ? null : stream, req: { deviceId: id, facing: requested }, auto: !!auto };
+      token++;
+      settlePending();
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      if (ownStream) { stopStream(); if (video) video.srcObject = null; }
+      else if (video) { try { video.pause(); } catch (e) { /* ignore */ } }
+      drawWaiting('Camera paused');
+      setState('paused');
+      return true;
+    }
+    // wake: reopen after pause(); fromTap = called from the learner's tap (errors are then reported)
+    function wake(fromTap) {
+      if (suspended) {
+        var s = suspended;
+        suspended = null;
+        if (!s.own) return attach(s.stream, false).then(function () { return true; }, function () { return false; });
+        return start(s.req.deviceId || undefined, { facing: s.req.facing, quiet: fromTap ? null : s })
+          .then(function () { return camState === 'live'; }, function () { return false; });
+      }
+      if (blocked && video && stream) return playVideo(token);
+      return Promise.resolve(false);
     }
 
     function startLoop() {
@@ -1094,18 +1326,19 @@
       try { tick(now()); } catch (e) { if (typeof console !== 'undefined') console.error(e); }
     }
 
-    function drawWaiting() {
+    function drawWaiting(text) {
       if (!ctx) return;
+      if (text && opts.statusText === false) text = ' ';
       var W = canvas.width || 640, H = canvas.height || 360;
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = '#111';
       ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.font = '500 ' + Math.max(12, Math.round(H * 0.045)) + 'px -apple-system, system-ui, sans-serif';
+      ctx.font = '500 ' + Math.max(12, Math.round(Math.min(W, H) * 0.045)) + 'px -apple-system, system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('Waiting for the camera...', W / 2, H / 2);
+      ctx.fillText(text || 'Waiting for the camera...', W / 2, H / 2);
       ctx.restore();
     }
 
@@ -1117,7 +1350,10 @@
     }
 
     function tick(t) {
+      if (blocked) { drawWaiting('Tap to start the camera'); return; }
       if (!video || video.readyState < 2 || !video.videoWidth) { drawWaiting(); return; }
+      if (t - lastTick < 28) return;                     // 120 Hz screens: read at most ~35 frames a second
+      lastTick = t;
       var vw = video.videoWidth, vh = video.videoHeight;
       if (!sCanvas) {
         sCanvas = document.createElement('canvas');
@@ -1125,12 +1361,13 @@
       }
       var sw = SAMPLE_WIDTH, sh = Math.max(1, Math.round(sw * vh / vw));
       if (sCanvas.width !== sw || sCanvas.height !== sh) { sCanvas.width = sw; sCanvas.height = sh; }
-      sCtx.drawImage(video, 0, 0, sw, sh);              // RAW frame, never mirrored
+      sCtx.drawImage(video, 0, 0, sw, sh);              // RAW frame, never mirrored (front or rear camera alike)
       var cells = sampleCells(sCtx.getImageData(0, 0, sw, sh));
       var out = session.frame(cells, t);
       lastInfo = out.info;
       if (out.event) handleEvent(out.event, t);
       if (ctx) {
+        var mirror = mirrored();
         var cw = Math.min(vw, maxWidth), chh = Math.round(cw * vh / vw);
         if (canvas.width !== cw || canvas.height !== chh) { canvas.width = cw; canvas.height = chh; }
         ctx.save();
@@ -1138,7 +1375,7 @@
         if (mirror) { ctx.translate(cw, 0); ctx.scale(-1, 1); }
         ctx.drawImage(video, 0, 0, cw, chh);
         ctx.restore();
-        drawOverlay(ctx, cw, chh, out.info, { mirror: mirror, now: t, flashAt: flashAt, hud: opts.hud !== false });
+        drawOverlay(ctx, cw, chh, out.info, { mirror: mirror, now: t, flashAt: flashAt, hud: hud });
       }
       emit('onFrame', out.info);
     }
@@ -1146,10 +1383,14 @@
     return {
       start: start,
       stop: stop,
-      useStream: function (st) {
+      // useStream(mediaStream, { facing? }) — e.g. the fake camera; the caller owns (and stops) the stream
+      useStream: function (st, o) {
+        if (o && (o.facing === 'user' || o.facing === 'environment')) requested = o.facing;
         if (!st) return fail({ code: 'notfound', message: CAMERA_MESSAGES.notfound, name: 'NoStream' });
         return attach(st, false);
       },
+      // the other camera (front <-> rear): resolves once it is showing
+      switchCamera: function () { return start(undefined, { facing: facing === 'environment' ? 'user' : 'environment' }); },
       captureNow: function () {
         var t = now(), ev = session.captureNow(t);
         if (ev) handleEvent(ev, t);
@@ -1157,8 +1398,20 @@
       },
       redo: function (step) { return session.redo(step); },
       reset: function () { session.reset(); },
-      setMirror: function (b) { mirror = !!b; },
+      setMirror: function (b) { mirrorPref = !!b; },
+      setHud: function (b) { hud = !!b; },          // the "2/6 RED centre" label drawn above the guide
+      // which way the camera faces, for a stream whose track doesn't say (the demo camera)
+      setFacing: function (f) {
+        requested = f === 'environment' ? 'environment' : 'user';
+        if (stream) detectFacing(); else { facing = requested; session.setFacing(facing); }
+      },
+      getFacing: function () { return facing; },
+      getMirror: mirrored,
+      getDeviceId: function () { return trackSettings(currentTrack()).deviceId || null; },
+      getState: function () { return camState; },
       setAutoCapture: function (b) { session.setAutoCapture(!!b); },
+      pause: function () { return pause(false); },
+      resume: function () { return wake(true); },
       listCameras: listCameras,
       getInfo: function () { return lastInfo; },
       getResult: function () { return session.result(); },
@@ -1178,23 +1431,28 @@
   }
 
   /* createFakeCamera(state, opts?) -> { stream, canvas, showFace(step), current(), hideCube(bool), set(opts), setState(state), destroy() }
-   * A 1280x720 synthetic webcam (canvas.captureStream(30)) showing a person holding the cube with
-   * SCAN_ORDER[step]'s face toward the camera, drawn UNMIRRORED like a real camera frame.
+   * A synthetic camera (canvas.captureStream(30), 1280x720 unless width/height say otherwise) showing
+   * the cube with SCAN_ORDER[step]'s face toward the camera, drawn UNMIRRORED like a real camera frame.
+   * scene 'selfie' (default): a laptop / front camera, the learner behind the cube holding it in both
+   * hands. scene 'rear': a phone's rear camera pointed at the cube, held in one hand in front of a room.
+   * The face itself is drawn the same way in both: the raw frame is the face seen head-on, upright.
    * state is in the standard scan frame (white top, green front).
    * opts: { cast: number (>0 warm/tungsten, <0 cool) | [r,g,b] multipliers, exposure: 1, noise: 1,
-   *         glare: 1, jitter: 1, face: 0, seed, palette: {W:[r,g,b],...} } */
+   *         glare: 1, jitter: 1, face: 0, seed, palette: {W:[r,g,b],...}, scene: 'selfie'|'rear',
+   *         width: 1280, height: 720 (e.g. 720 x 1280 for a phone held upright) } */
   function createFakeCamera(state, opts) {
     opts = opts || {};
     if (typeof document === 'undefined') throw new Error('createFakeCamera needs a browser');
     var Cube = CubeLib();
-    var W = 1280, H = 720, TRANS_MS = 800;
+    var W = Math.max(160, Math.round(+opts.width || 1280)), H = Math.max(160, Math.round(+opts.height || 720)), TRANS_MS = 800;
     state = (state || (Cube ? Cube.solved() : null)).slice();
     var canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     var ctx = canvas.getContext('2d');
-    var P = { cast: 0, exposure: 1, noise: 1, glare: 1, jitter: 1, palette: DEFAULT_RGB };
+    var P = { cast: 0, exposure: 1, noise: 1, glare: 1, jitter: 1, palette: DEFAULT_RGB, scene: 'selfie' };
     function setParams(o) {
-      ['cast', 'exposure', 'noise', 'glare', 'jitter', 'palette'].forEach(function (k) { if (o && o[k] != null) P[k] = o[k]; });
+      ['cast', 'exposure', 'noise', 'glare', 'jitter', 'palette', 'scene'].forEach(function (k) { if (o && o[k] != null) P[k] = o[k]; });
+      P.scene = P.scene === 'rear' ? 'rear' : 'selfie';
     }
     setParams(opts);
     var rnd = rng(opts.seed || 20261002);
@@ -1256,6 +1514,7 @@
       bg = document.createElement('canvas');
       bg.width = W; bg.height = H;
       var b = bg.getContext('2d');
+      if (P.scene === 'rear') { renderRoom(b); finishBackground(b); return; }
       var grad = b.createLinearGradient(0, 0, 0, H);
       grad.addColorStop(0, css([96, 90, 84]));
       grad.addColorStop(1, css([146, 134, 118]));
@@ -1293,6 +1552,47 @@
       b.beginPath(); b.ellipse(W * 0.5, H * 0.38, 150, 190, 0, 0, Math.PI * 2); b.fill();
       b.fillStyle = css([50, 36, 28]);
       b.beginPath(); b.ellipse(W * 0.5, H * 0.17, 160, 95, 0, Math.PI, Math.PI * 2); b.fill();
+      finishBackground(b);
+    }
+    // a phone's rear camera: a wall with a window, a table top below, a mug and a book on it
+    function renderRoom(b) {
+      var horizon = H * 0.62;
+      var wall = b.createLinearGradient(0, 0, 0, horizon);
+      wall.addColorStop(0, css([168, 160, 146]));
+      wall.addColorStop(1, css([196, 186, 168]));
+      b.fillStyle = wall;
+      b.fillRect(0, 0, W, horizon);
+      var wx = W * 0.62, wy = H * 0.06, ww = W * 0.3, wh = horizon * 0.55;    // window, with daylight around it
+      var glow = b.createRadialGradient(wx + ww / 2, wy + wh / 2, 10, wx + ww / 2, wy + wh / 2, Math.max(W, H) * 0.5);
+      glow.addColorStop(0, css([255, 250, 236], 1, 0.55));
+      glow.addColorStop(1, css([255, 250, 236], 1, 0));
+      b.fillStyle = glow;
+      b.fillRect(0, 0, W, horizon);
+      b.fillStyle = css([236, 240, 244]);
+      b.fillRect(wx, wy, ww, wh);
+      b.fillStyle = css([120, 110, 98]);
+      b.fillRect(wx + ww / 2 - 3, wy, 6, wh);
+      b.fillRect(wx, wy + wh / 2 - 3, ww, 6);
+      var table = b.createLinearGradient(0, horizon, 0, H);
+      table.addColorStop(0, css([128, 92, 62]));
+      table.addColorStop(1, css([92, 62, 40]));
+      b.fillStyle = table;
+      b.fillRect(0, horizon, W, H - horizon);
+      b.fillStyle = css([70, 48, 32]);
+      b.fillRect(0, horizon - 4, W, 8);
+      for (var k = 1; k < 7; k++) {                                         // wood grain
+        b.fillStyle = css([110, 78, 52], 1, 0.35);
+        b.fillRect(0, horizon + (H - horizon) * k / 7, W, 2);
+      }
+      b.fillStyle = css([60, 90, 140]);                                      // a book
+      b.fillRect(W * 0.04, horizon + 18, W * 0.22, 26);
+      b.fillStyle = css([230, 226, 214]);
+      b.fillRect(W * 0.04 + 4, horizon + 20, W * 0.22 - 8, 6);
+      b.fillStyle = css([200, 70, 60]);                                      // a mug
+      b.beginPath(); b.ellipse(W * 0.86, horizon + 40, 30, 10, 0, 0, Math.PI * 2); b.fill();
+      b.fillRect(W * 0.86 - 30, horizon - 20, 60, 60);
+    }
+    function finishBackground(b) {
       // static sensor pattern + vignette
       b.globalAlpha = 0.12;
       b.globalCompositeOperation = 'overlay';
@@ -1308,7 +1608,7 @@
     }
     renderBackground();
 
-    var faceSize = GUIDE_FRAC * Math.min(W, H);
+    var faceSize = guideRect(W, H).size;
     function holdPose(t) {
       var s = t / 1000, j = +P.jitter;
       return {
@@ -1327,6 +1627,17 @@
       ctx.translate(pose.x, pose.y);
       ctx.rotate(pose.rot);
       var half = faceSize / 2;
+      if (P.scene === 'rear') {                    // one hand from below (the other holds the phone)
+        ctx.fillStyle = css([196, 150, 120]);
+        rr(-half * 0.45, half * 0.7, half * 0.9, H, 60);                   // wrist and forearm
+        ctx.fill();
+        ctx.beginPath(); ctx.ellipse(0, half * 0.92, half * 0.78, half * 0.42, 0, 0, Math.PI * 2); ctx.fill();   // palm
+        ctx.fillStyle = css([182, 136, 108]);
+        ctx.beginPath(); ctx.ellipse(-half - 20, half * 0.25, 26, 62, -0.15, 0, Math.PI * 2); ctx.fill();       // thumb
+        for (var f = 0; f < 3; f++) { ctx.beginPath(); ctx.ellipse(half + 18, -half * 0.25 + f * 52, 26, 20, 0, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
+        return;
+      }
       [-1, 1].forEach(function (side) {
         ctx.fillStyle = css([204, 160, 132]);
         rr(side > 0 ? half - 6 : -half - 104, -70, 110, 260, 48);
@@ -1461,6 +1772,8 @@
       },
       hideCube: function (b) { hidden = !!b; },
       set: function (o) { setParams(o); renderBackground(); },
+      size: function () { return { width: W, height: H }; },
+      scene: function () { return P.scene; },
       setState: function (s) { state = s.slice(); },
       destroy: function () {
         clearInterval(timer);
@@ -1491,7 +1804,15 @@
     hungarian: hungarian,
     mapCameraError: mapCameraError,
     listCameras: listCameras,
-    drawOverlay: drawOverlay
+    drawOverlay: drawOverlay,
+    // phones and camera choice (pure; env injectable for tests)
+    deviceInfo: deviceInfo,
+    isPhone: isPhone,
+    defaultFacing: defaultFacing,
+    cameraConstraints: cameraConstraints,
+    retryCamera: retryCamera,
+    guessFacing: guessFacing,
+    sayFor: sayFor
   };
 
   root.CC = root.CC || {};

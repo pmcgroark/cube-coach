@@ -9,6 +9,16 @@
   <meta name="theme-color" content="#f3f5f6" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1014" media="(prefers-color-scheme: dark)">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314181d'/%3E%3Crect x='4' y='4' width='7' height='7' rx='1.6' fill='%23ffd500'/%3E%3Crect x='12.5' y='4' width='7' height='7' rx='1.6' fill='%23c8102e'/%3E%3Crect x='21' y='4' width='7' height='7' rx='1.6' fill='%23009e60'/%3E%3Crect x='4' y='12.5' width='7' height='7' rx='1.6' fill='%230051ba'/%3E%3Crect x='12.5' y='12.5' width='7' height='7' rx='1.6' fill='%23ffd500'/%3E%3Crect x='21' y='12.5' width='7' height='7' rx='1.6' fill='%23ff6a13'/%3E%3Crect x='4' y='21' width='7' height='7' rx='1.6' fill='%23f5f5f0'/%3E%3Crect x='12.5' y='21' width='7' height='7' rx='1.6' fill='%23009e60'/%3E%3Crect x='21' y='21' width='7' height='7' rx='1.6' fill='%23ffd500'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <!-- Installable app (Add to Home Screen) + offline copy: see manifest.webmanifest and sw.js -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Cube Coach">
+  <meta name="application-name" content="Cube Coach">
+  <meta name="format-detection" content="telephone=no">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -51,8 +61,8 @@
 
   <div id="toasts" class="toast-region" aria-live="polite"></div>
 
-  <!-- three.js (3D cube). If it can't load (offline), the app still works with a flat cube view. -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" referrerpolicy="no-referrer" onerror="window.CC_THREE_FAILED = true"></script>
+  <!-- three.js r128 (3D cube), kept in vendor/ so it works offline. If it can't load, the app still works with a flat cube view. -->
+  <script src="vendor/three.min.js" onerror="window.CC_THREE_FAILED = true"></script>
 
   <!-- Core modules (order matters: later modules look earlier ones up via window.CC) -->
   <script src="js/cube.js"></script>
@@ -83,7 +93,8 @@
         if (window.CC && window.CC.App) { window.CC.App.boot(); return; }
         var main = document.getElementById('screen');
         if (main) main.innerHTML = '<div class="card"><h1>Cube Coach couldn’t start</h1>' +
-          '<p>The app files didn’t load. Start it with “Start Cube Coach.command” and open http://localhost:8765.</p></div>';
+          '<p>Some of the app files didn’t load. Check your internet connection and reload the page. ' +
+          '(On a Mac, start it with “Start Cube Coach.command” and open http://localhost:8765.)</p></div>';
       }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
       else start();

@@ -239,11 +239,12 @@ function verifyDemo(stageId, d) {
   return { start, end };
 }
 
-test('every stage has 2-4 demos; each demo is verified by simulation', () => {
+test('every stage has 2-4 demos (the middle layer 8-12); each demo is verified by simulation', () => {
   const ids = new Set();
   STAGE_IDS.forEach((sid) => {
     const list = L.DEMOS[sid];
-    assert.ok(list.length >= 2 && list.length <= 4, sid + ' demo count');
+    if (sid === 'middle') assert.ok(list.length >= 8 && list.length <= 12, sid + ' demo count ' + list.length);
+    else assert.ok(list.length >= 2 && list.length <= 4, sid + ' demo count');
     list.forEach((d) => {
       assert.ok(!ids.has(d.id), 'duplicate demo id ' + d.id); ids.add(d.id);
       assert.ok(d.title && d.summary, d.id);
@@ -845,6 +846,193 @@ test('no-cube learning: tips, and a pause-and-predict checkpoint in every demo',
 test('British/neutral spelling throughout', () => {
   const text = JSON.stringify(L);
   ['color', 'center', 'recognize', 'favorite', 'counterclockwise', 'practicing'].forEach((w) => assert.ok(!new RegExp('\\b' + w, 'i').test(text), w));
+});
+
+// ------------------------------------------------------------ middle layer: the extra worked examples and copy
+const MID_SLOTS = Cube.EDGES.filter((e) => ['FR', 'FL', 'BL', 'BR'].includes(e.name));
+const topEdgesFree = (s) => ['UF', 'UR', 'UB', 'UL'].filter((n) => Cube.EDGES.find((e) => e.name === n).stickers.every((i) => s[i] !== 'Y'));
+const slotState = (s, name) => {   // home | flipped | wrong | yellow, for the middle slot `name`
+  const e = Cube.EDGES.find((x) => x.name === name), cols = e.stickers.map((i) => s[i]), want = e.stickers.map((i) => Cube.center(s, Cube.STICKERS[i].face));
+  if (cols.includes('Y')) return 'yellow';
+  if (cols[0] === want[0] && cols[1] === want[1]) return 'home';
+  return cols[0] === want[1] && cols[1] === want[0] ? 'flipped' : 'wrong';
+};
+const edgeHomeL = (s, a, b) => { const e = Cube.findEdge(s, a, b); return s[e.stickers[0]] === Cube.center(s, e.faces[0]) && s[e.stickers[1]] === Cube.center(s, e.faces[1]); };
+// T-states: a random first-layer cube, one solved slot held at front-right (right) or front-left (left), the algorithm undone
+function middleTs(n) {
+  const out = [];
+  for (let seed = 1; seed <= n; seed++) {
+    const s0 = randomFrom(FL_POOL, seed, 8);
+    for (const rot of ['', 'y', "y'", 'y2']) for (const id of ['mid-right', 'mid-left']) {
+      const held = Cube.applyAlg(s0, rot);
+      const slot = id === 'mid-right' ? 'FR' : 'FL';
+      if (slotState(held, slot) !== 'home') continue;
+      const t = Cube.applyAlg(held, Cube.invertAlg(A(id)));
+      out.push({ id, t, side: t[19], top: t[7], slot, held });
+    }
+  }
+  return out;
+}
+
+test('middle layer: at least 8 worked examples, the original three kept, and every new one tells the truth', () => {
+  const ids = L.DEMOS.middle.map((d) => d.id);
+  assert.ok(ids.length >= 8, 'middle demos: ' + ids.length);
+  ['middle-right', 'middle-left', 'middle-stuck'].forEach((id) => assert.ok(ids.includes(id), id + ' kept'));
+  ['middle-right-back', 'middle-right-turn', 'middle-two', 'middle-wrong-slot', 'middle-no-edge', 'middle-yellow-trap'].forEach((id) => assert.ok(ids.includes(id), id));
+  const eq = (got, want, msg) => assert.deepStrictEqual(got, want, msg + ': expected ' + JSON.stringify(want) + ', got ' + JSON.stringify(got));
+  const C3 = (s) => [Cube.center(s, 'F'), Cube.center(s, 'R'), Cube.center(s, 'L')];
+  const done = (id) => after(id, L.demoStates(id).moves.length);
+  // edge at the back, U2
+  eq(topEdgesFree(after('middle-right-back', 0)), ['UB'], 'right-back usable');
+  eq(edgeAt(after('middle-right-back', 0), 'G', 'O'), 'UB:B', 'green faces the back'); eq(Cube.center(after('middle-right-back', 0), 'F'), 'G', 'green in front');
+  eq(edgeAt(after('middle-right-back', 1), 'G', 'O'), 'UF:F', 'T made'); eq(after('middle-right-back', 1)[7], Cube.center(after('middle-right-back', 1), 'R'), 'orange on top = right centre');
+  { const s = after('middle-right-back', 5); eq(edgeAt(s, 'G', 'O'), 'UF:F', 'half-way edge back'); eq(cornerAt(s, 'W', 'G', 'O'), 'URF:R', 'corner right next to it'); }
+  assert.ok(solvedPiece(done('middle-right-back'), 'FR') && firstLayer(done('middle-right-back')));
+  // not above its own colour: rotate first
+  { const s = after('middle-right-turn', 0); eq(topEdgesFree(s), ['UF'], 'right-turn usable'); eq(edgeAt(s, 'O', 'B'), 'UF:F', 'orange faces you'); eq(Cube.center(s, 'F'), 'G', 'above green'); }
+  { const s = after('middle-right-turn', 1); eq(Cube.center(s, 'F'), 'O', 'orange faces you'); eq(Cube.findEdge(s, 'O', 'B').name, 'UL', 'top-left'); }
+  { const s = after('middle-right-turn', 2); eq(edgeAt(s, 'O', 'B'), 'UF:F', 'T'); eq(Cube.center(s, 'R'), 'B', 'blue is the right centre'); }
+  assert.ok(edgeHomeL(done('middle-right-turn'), 'O', 'B'));
+  // two in a row
+  { const s = after('middle-two', 0); eq(topEdgesFree(s).sort(), ['UL', 'UR'], 'two usable'); eq(edgeAt(s, 'G', 'O'), 'UR:R', 'green–orange on the right, green on its side'); eq(edgeAt(s, 'R', 'B'), 'UL:L', 'red–blue on the left'); }
+  eq(edgeAt(after('middle-two', 1), 'G', 'O'), 'UF:F', 'U lines it up'); eq(Cube.center(after('middle-two', 1), 'R'), 'O');
+  { const s = after('middle-two', 9); assert.ok(edgeHomeL(s, 'G', 'O')); eq(edgeAt(s, 'R', 'B'), 'UR:R', 'red–blue at the top-right, red on its side'); eq(Cube.center(s, 'L'), 'R', 'red centre on the left'); }
+  { const s = after('middle-two', 10); eq(Cube.center(s, 'F'), 'R', 'red faces you'); eq(edgeAt(s, 'R', 'B'), 'UB:B', 'at the back, red facing the back'); }
+  { const s = after('middle-two', 11); eq(edgeAt(s, 'R', 'B'), 'UF:F', 'T'); eq(Cube.center(s, 'L'), 'B', 'blue is the left centre'); }
+  { const s = done('middle-two'); assert.ok(edgeHomeL(s, 'G', 'O') && edgeHomeL(s, 'R', 'B')); }
+  // wrong slot: the edge that belongs there kicks it out
+  { const s = after('middle-wrong-slot', 0);
+    eq(Cube.findEdge(s, 'G', 'O').name, 'BR', 'green–orange at the back-right'); eq(slotState(s, 'BR'), 'wrong', 'wrong slot');
+    eq([Cube.center(s, 'B'), Cube.center(s, 'R')], ['B', 'O'], 'between blue and orange');
+    eq(topEdgesFree(s), ['UF'], 'blue–orange is the usable edge'); eq(edgeAt(s, 'B', 'O'), 'UF:F', 'blue facing you'); }
+  { const s = after('middle-wrong-slot', 1); eq(Cube.center(s, 'F'), 'B'); eq(edgeAt(s, 'B', 'O'), 'UB:B', 'blue facing the back'); }
+  { const s = after('middle-wrong-slot', 2); eq(edgeAt(s, 'B', 'O'), 'UF:F', 'T'); eq(Cube.center(s, 'L'), 'O', 'orange is the left centre'); eq(Cube.findEdge(s, 'G', 'O').name, 'FL', 'green–orange sits in that slot'); }
+  { const s = after('middle-wrong-slot', 10); assert.ok(edgeHomeL(s, 'B', 'O')); eq(edgeAt(s, 'G', 'O'), 'UB:B', 'kicked out to the top at the back, green facing the back'); }
+  { const s = after('middle-wrong-slot', 11); eq(Cube.center(s, 'F'), 'G'); eq(edgeAt(s, 'G', 'O'), 'UF:F', 'already a T'); eq(Cube.center(s, 'R'), 'O'); }
+  { const s = done('middle-wrong-slot'); assert.ok(edgeHomeL(s, 'G', 'O') && edgeHomeL(s, 'B', 'O')); }
+  // no usable edge on top: find the flipped one at the back-left
+  { const s = after('middle-no-edge', 0);
+    ['', 'U', "U'", 'U2'].forEach((u) => eq(topEdgesFree(Cube.applyAlg(s, u)), [], 'no usable top edge'));
+    eq(slotState(s, 'BL'), 'flipped', 'back-left flipped'); eq(Cube.findEdge(s, 'B', 'R').name, 'BL');
+    const e = Cube.findEdge(s, 'B', 'R'); eq(Cube.center(s, e.faces[0]), 'R', 'blue on the red side');
+    ['FR', 'FL', 'BR'].forEach((n) => eq(slotState(s, n), 'home', n)); }
+  { const s = after('middle-no-edge', 1); eq(slotState(s, 'FR'), 'flipped', 'stuck slot at the front-right'); eq(Cube.findEdge(s, 'B', 'R').name, 'FR'); }
+  { const s = after('middle-no-edge', 9); eq(edgeAt(s, 'B', 'R'), 'UB:B', 'out, on top at the back, blue facing the back'); eq(Cube.center(s, 'F'), 'B'); assert.ok(firstLayer(s)); }
+  { const s = after('middle-no-edge', 10); eq(edgeAt(s, 'B', 'R'), 'UF:F'); eq(Cube.center(s, 'R'), 'R', 'red is the right centre'); }
+  assert.ok(edgeHomeL(done('middle-no-edge'), 'B', 'R'));
+  { const st = L.demoStates('middle-no-edge').start; const plan = require('../js/solver.js').solve(st).stages[3];
+    eq(plan.steps.map((x) => x.case.id), ['edge-stuck', 'edge-right'], 'the coach does the same'); eq([].concat(...plan.steps.map((x) => x.moves)), L.demoStates('middle-no-edge').moves, 'same moves'); }
+  // the yellow-edge trap
+  { const s = after('middle-yellow-trap', 0);
+    eq(s[19], Cube.center(s, 'F'), 'green above the green centre'); eq(s[7], 'Y', 'yellow on top');
+    assert.ok(![Cube.center(s, 'R'), Cube.center(s, 'L')].includes('Y'), 'yellow is neither side centre');
+    eq(topEdgesFree(s), ['UB'], 'only green–red is usable'); eq(edgeAt(s, 'G', 'R'), 'UB:B', 'at the back'); }
+  { const s = after('middle-yellow-trap', 1); eq(edgeAt(s, 'G', 'R'), 'UF:F', 'a real T'); eq(Cube.center(s, 'L'), 'R', 'red is the left centre'); }
+  assert.ok(edgeHomeL(done('middle-yellow-trap'), 'G', 'R'));
+  // narration "U' / U2 / y / y' brings …": the claimed centres in front after each rotation
+  [['middle-right-turn', 1, 'O'], ['middle-two', 10, 'R'], ['middle-wrong-slot', 1, 'B'], ['middle-wrong-slot', 11, 'G'], ['middle-no-edge', 1, 'B']]
+    .forEach(([id, n, f]) => eq(C3(after(id, n))[0], f, id + '@' + n + ' front centre'));
+  // every middle demo: each algorithm in it keeps the white layer and the slots already filled
+  L.DEMOS.middle.forEach((d) => {
+    const ds = L.demoStates(d.id);
+    for (let k = 0; k + 8 <= ds.moves.length; k++) {
+      const seg = ds.moves.slice(k, k + 8).join(' ');
+      if (seg !== A('mid-right') && seg !== A('mid-left')) continue;
+      const before = Cube.applyAlg(ds.start, ds.moves.slice(0, k));
+      const end = Cube.applyAlg(ds.start, ds.moves.slice(0, k + 8));
+      assert.ok(firstLayer(end), d.id + ': white layer whole after the algorithm at ' + k);
+      MID_SLOTS.filter((e) => slotState(before, e.name) === 'home').forEach((e) => {
+        const cols = e.stickers.map((i) => before[i]); assert.ok(edgeHomeL(end, cols[0], cols[1]), d.id + ' keeps ' + cols.join(''));
+      });
+    }
+  });
+});
+
+test('middle layer: inserting an edge always pushes out whatever was in that slot (to the top layer)', () => {
+  let n = 0;
+  middleTs(120).forEach(({ id, t, slot }) => {
+    const e = Cube.EDGES.find((x) => x.name === slot), occ = e.stickers.map((i) => t[i]);
+    const end = Cube.applyAlg(t, A(id));
+    assert.strictEqual(Cube.findEdge(end, occ[0], occ[1]).name[0], 'U', 'kicked to the top');
+    n++;
+  });
+  assert.ok(n > 300, 'tested ' + n);
+});
+
+test('middle layer copy: two halves, the mirror rule, why it works, landmarks and what to do when lost', () => {
+  require('../js/solver.js');
+  const Gym = require('../js/gym.js');
+  const M = L.STAGES.middle;
+  // two halves of four moves; same rhythm as the gym
+  assert.deepStrictEqual(M.halves.map((h) => h.algId), ['mid-right', 'mid-left']);
+  M.halves.forEach((h) => {
+    assert.strictEqual(tok(h.first).length, 4); assert.strictEqual(tok(h.second).length, 4);
+    assert.strictEqual(h.first + ' ' + h.second, A(h.algId), h.algId + ' halves rebuild the algorithm');
+    const g = Gym.ALGS[h.algId === 'mid-right' ? 'right' : 'left'];
+    assert.deepStrictEqual(h.rhythm, g.halves.map((x) => x.rhythm));
+    assert.deepStrictEqual([tok(h.first), tok(h.second)], g.halves.map((x) => x.moves));
+    assert.ok(h.firstDoes && h.secondDoes);
+  });
+  const halvesText = M.howTo.find((p) => p.startsWith('Learn each algorithm as two halves'));
+  assert.ok(halvesText.includes(M.halves[0].first) && halvesText.includes(M.halves[0].second) && halvesText.includes(M.halves[0].rhythm[0]) && halvesText.includes(M.halves[0].rhythm[1]));
+  // left = mirror of right: swap R and L, every turn the other way
+  const mirror = (a) => tok(a).map((t) => { const b = { R: 'L', L: 'R' }[t[0]] || t[0]; return t.endsWith("'") ? b : b + "'"; }).join(' ');
+  assert.strictEqual(mirror(M.halves[0].first), M.halves[1].first); assert.strictEqual(mirror(M.halves[0].second), M.halves[1].second);
+  const mirrorText = M.howTo.find((p) => p.startsWith('Left is the mirror'));
+  assert.ok(mirrorText.includes(M.halves[1].first) && mirrorText.includes(M.halves[1].second));
+  assert.match(M.mirrorRule, /swap R for L/);
+  let tested = 0;
+  middleTs(80).forEach(({ id, t, side, top, slot }) => {
+    const R = id === 'mid-right', mv = tok(A(id));
+    const st = (k) => Cube.applyAlg(t, mv.slice(0, k));
+    // why it works: the first half parks the white corner on top next to the edge, matching colours touching…
+    const h = st(4), e = Cube.findEdge(h, side, top), c = Cube.findCorner(h, 'W', side, top);
+    assert.strictEqual(e.name, 'UF'); assert.strictEqual(c.name, R ? 'URF' : 'UFL'); assert.strictEqual(c.faces[0], R ? 'R' : 'L', 'white faces out to the side');
+    assert.strictEqual(h[R ? 20 : 18], h[19]); assert.strictEqual(h[R ? 8 : 6], h[7]);
+    // …the only piece missing from the white layer is that corner…
+    const fl = (s) => Cube.EDGES.filter((x) => x.name[0] === 'D').concat(Cube.CORNERS.filter((x) => x.name[0] === 'D')).filter((p) => !p.stickers.every((i) => s[i] === Cube.center(s, Cube.STICKERS[i].face))).map((p) => p.name);
+    assert.deepStrictEqual(fl(h), [R ? 'DFR' : 'DLF'], 'only that corner is missing');
+    // …and that checkpoint picture appears only after the first half (never at another move)
+    for (let k = 1; k <= 7; k++) {
+      const s = st(k), ek = Cube.findEdge(s, side, top), ck = Cube.findCorner(s, 'W', side, top);
+      const looks = ek.name === 'UF' && ck.name === (R ? 'URF' : 'UFL') && fl(s).length === 1;
+      assert.strictEqual(looks, k === 4, 'checkpoint only at move 4 (k=' + k + ')');
+      assert.ok(!firstLayer(s) || k === 1, 'white layer broken from the 2nd move');   // landmarks[2]
+    }
+    [6, 7].forEach((k) => assert.ok(fl(st(k)).some((n) => n.length === 2), 'after the F turn the white cross has a piece out'));
+    // the second half puts the pair back together; everything else in the first two layers is where it was
+    const end = st(8);
+    assert.ok(edgeHomeL(end, side, top) && solvedPiece(end, R ? 'DFR' : 'DLF') && firstLayer(end));
+    MID_SLOTS.filter((x) => x.name !== slot).forEach((x) => assert.deepStrictEqual(x.stickers.map((i) => end[i]), x.stickers.map((i) => t[i]), 'slot ' + x.name + ' unchanged'));
+    // lost your place: undoing the moves in reverse, each turned the other way, gets you back to the T
+    for (let k = 0; k <= 8; k++) assert.deepStrictEqual(Cube.applyAlg(st(k), Cube.invertAlg(mv.slice(0, k))), t);
+    // a slip (direction, or the other side's move) never comes out right if you just carry on
+    for (let j = 0; j < 8; j++) {
+      const slips = [Cube.invertMove(mv[j])].concat(/^[RL]/.test(mv[j]) ? [{ R: 'L', L: 'R' }[mv[j][0]] + (mv[j].endsWith("'") ? '' : "'")] : []);
+      slips.forEach((w) => {
+        const s = Cube.applyAlg(t, mv.slice(0, j).concat([w], mv.slice(j + 1)));
+        assert.ok(!(firstLayer(s) && edgeHomeL(s, side, top)), 'carrying on after a slip at move ' + (j + 1) + ' fails');
+      });
+    }
+    tested++;
+  });
+  assert.ok(tested > 200, 'tested ' + tested);
+  // "the right algorithm only changes the front-right slot" (and the left only the front-left)
+  const pR = Cube.algPerm(A('mid-right')), pL = Cube.algPerm(A('mid-left'));
+  ['FL', 'BL', 'BR'].forEach((n) => Cube.EDGES.find((e) => e.name === n).stickers.forEach((i) => assert.strictEqual(pR[i], i, n)));
+  ['FR', 'BL', 'BR'].forEach((n) => Cube.EDGES.find((e) => e.name === n).stickers.forEach((i) => assert.strictEqual(pL[i], i, n)));
+  // "yellow on top matches neither side centre": with yellow on top no side centre is ever yellow
+  ['', 'y', "y'", 'y2'].forEach((r) => ['F', 'R', 'B', 'L'].forEach((f) => assert.notStrictEqual(Cube.center(Cube.applyAlg(Y0, r), f), 'Y')));
+  // the copy is there and in the right places
+  assert.ok(M.why.includes('first half lifts the white corner') && M.why.includes('together, as a pair'));
+  assert.strictEqual(M.landmarks.length, 3); assert.strictEqual(M.lostPlace.length, 5);
+  assert.ok(M.howTo.some((p) => p.startsWith('Lost your place?')) && M.howTo.some((p) => p.startsWith('Check yourself after the first half')));
+  ['Turning the whole cube in the middle', 'Stopping half-way', 'A slip', 'Popping out a stuck edge', 'Lining up an edge with yellow on top']
+    .forEach((m) => assert.ok(M.mistakes.some((x) => x.startsWith(m)), 'mistake: ' + m));
+  assert.ok(M.mnemonics.length >= 5);
+  assert.strictEqual(M.hints.length, 3);
+  // the recognise cases stay as they were (the Practice screen draws its options from them)
+  assert.deepStrictEqual(M.recognise.map((r) => r.caseId), ['edge-right', 'edge-left', 'edge-stuck', 'edge-yellow']);
 });
 
 console.log(passed + ' lessons tests passed' + (process.exitCode ? ' (with failures)' : ''));

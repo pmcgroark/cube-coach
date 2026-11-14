@@ -573,6 +573,18 @@
         return h('div', { class: 'cc-quick' }, hasCube() ? [withCube, noCube] : [noCube, withCube]);
       }
 
+      // Middle Layer Gym: offered when the middle layer is the stage to work on (or the gym was used lately).
+      function gymTile() {
+        if (!CC.Gym || !App.screens || App.screens().indexOf('gym') === -1) return null;
+        var focus = Coach && Coach.journey ? attempt(function () { return Coach.journey(data).focusStage; }, null) : null;
+        var weakest = null, low = Infinity;
+        if (Coach && Coach.masteryOf) stageList().forEach(function (s) { var m = attempt(function () { return Coach.masteryOf(data, s.id); }, 0); if (m < low) { low = m; weakest = s.id; } });
+        var recent = isObj(data.gym) && Object.keys(data.gym).some(function (k) { var t = ms(data.gym[k] && data.gym[k].lastAt); return isFinite(t) && Date.now() - t < 7 * 864e5; });
+        if (focus !== 'middle' && weakest !== 'middle' && !recent) return null;
+        return UI.tile({ icon: 'zap', title: 'Middle Layer Gym', badge: 'Stage 4', onClick: go('gym'),
+          desc: 'Stuck on the middle layer? Short exercises for remembering the moves, seeing what to do, stuck edges and keeping your place.' });
+      }
+
       function milestonesCard() {
         var all = Coach && Coach.milestones ? attempt(function () { return Coach.milestones(data); }, []) : [];
         if (!all.length) return null;
@@ -602,6 +614,8 @@
       var welcome = welcomeCard();
       if (welcome) root$.appendChild(welcome);
       root$.appendChild(hero());
+      var gym$ = gymTile();
+      if (gym$) root$.appendChild(gym$);
       root$.appendChild(stripHost);
       renderStrip();
       renderPlan();

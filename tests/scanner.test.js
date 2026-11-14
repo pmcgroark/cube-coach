@@ -134,6 +134,177 @@ test('scan tips: next face is on the learner\'s left; U and D tips reach the rig
   assert.deepStrictEqual(flip(toWorld(U, Cube.NORMAL.F)), [0, 1, 0], 'green on top');
 });
 
+// ------------------------------------------------------------------ phones: the rear camera
+// How the cube is held for each step, as whole-cube rotations of the scan frame (as in js/screens/scan.js).
+const HOLD = ['', 'y', 'y2', "y'", "x'", 'x'];
+const holdState = (i) => Cube.applyAlg(Cube.solved(), HOLD[i]);
+/* Pinhole camera at P looking along d with image-up u: a world point w lands at image (x, y) with x to
+ * the right of the picture (r = d x u) and y up. Raw pixel column grows with x, row grows with -y. */
+function project(cam, w) {
+  const v = [w[0] - cam.P[0], w[1] - cam.P[1], w[2] - cam.P[2]], r = cross(cam.d, cam.u), depth = dot(v, cam.d);
+  return [dot(v, r) / depth, dot(v, cam.u) / depth];
+}
+const rank3 = (vals, v) => vals.filter((x) => x < v - 1e-9).length / 3;   // 9 values in 3 groups: 0, 1, 2
+// a laptop webcam (or a phone's front camera): the learner holds the cube up to it, facing it
+const FRONT = { P: [0, 0, 10], d: [0, 0, -1], u: [0, 1, 0], learner: { eye: [0, 0, -12], d: [0, 0, 1], u: [0, 1, 0] } };
+// a phone's rear camera: the learner holds the phone between their eyes and the cube, both looking at it
+const REAR = { P: [0, 0, 9], d: [0, 0, -1], u: [0, 1, 0], learner: { eye: [0, 0, 14], d: [0, 0, -1], u: [0, 1, 0] } };
+
+test('SCAN_ORDER: rear-camera wording ("Point the camera at ...") for every hold', () => {
+  Scanner.SCAN_ORDER.forEach((e) => {
+    assert.ok(new RegExp('^Point the camera at the ' + Cube.COLOR_NAME[e.center].toUpperCase() + ' centre, ' + Cube.COLOR_NAME[e.up].toUpperCase() + ' on top$').test(e.point), e.point);
+    assert.ok(e.tipRear && e.tipRear.length > 20);
+    assert.strictEqual(Scanner.sayFor(e, 'environment'), e.point);
+    assert.strictEqual(Scanner.sayFor(e, 'user'), e.say);
+    assert.strictEqual(Scanner.sayFor(e), e.say);
+  });
+});
+
+test('rear camera: the raw frame is still the face head-on, so raw cell (row, col) = sticker (face, row, col)', () => {
+  [['front', FRONT], ['rear', REAR]].forEach(([name, cam]) => {
+    Scanner.SCAN_ORDER.forEach((e) => {
+      const M = hold(e), fi = FACES.indexOf(e.face);
+      const pts = [];
+      for (let k = 0; k < 9; k++) pts.push(project(cam, toWorld(M, Cube.STICKERS[fi * 9 + k].point)));
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => -p[1]);
+      for (let k = 0; k < 9; k++) {
+        const s = Cube.STICKERS[fi * 9 + k];
+        assert.strictEqual(Math.floor(rank3(ys, ys[k])), s.row, name + ' camera, ' + e.face + ' row of sticker ' + k);
+        assert.strictEqual(Math.floor(rank3(xs, xs[k])), s.col, name + ' camera, ' + e.face + ' col of sticker ' + k);
+      }
+      // the shown face is the one toward the camera, and the camera sees it from outside
+      assert.ok(dot(toWorld(M, Cube.NORMAL[e.face]), cam.d) < 0, name + ': ' + e.face + ' faces the camera');
+    });
+  });
+  // a mirrored picture would swap the columns: the scanner must (and does) sample the raw frame
+  const truth = randomCube(777), faces = observe(truth, Cube.mulberry32(778), MODERATE);
+  assert.ok(same(Scanner.classifyCube(faces).state, truth), 'raw samples give the cube');
+  const mirrored = {};
+  FACES.forEach((f) => { mirrored[f] = faces[f].map((_, k) => faces[f][Math.floor(k / 3) * 3 + 2 - (k % 3)]); });
+  assert.ok(!same(Scanner.classifyCube(mirrored).state, truth), 'mirrored samples would not');
+});
+
+test('rear camera: the next face is on the learner\'s RIGHT and "a quarter turn to the left" brings it round', () => {
+  const S = Scanner.SCAN_ORDER;
+  const rightOf = (who) => cross(who.d, who.u);               // the learner's own right
+  for (let i = 0; i < 6; i++) {
+    const st = holdState(i);
+    assert.strictEqual(Cube.center(st, 'F'), S[i].center, 'hold ' + i + ' front');
+    assert.strictEqual(Cube.center(st, 'U'), S[i].up, 'hold ' + i + ' top');
+  }
+  for (let i = 0; i < 4; i++) {
+    const next = i < 3 ? S[i + 1].face : 'F';
+    const w = toWorld(hold(S[i]), Cube.NORMAL[next]);
+    assert.ok(dot(w, rightOf(FRONT.learner)) < 0, 'front camera: step ' + i + ' next face on the learner\'s left');
+    assert.ok(dot(w, rightOf(REAR.learner)) > 0, 'rear camera: step ' + i + ' next face on the learner\'s right');
+    // y: the face toward you moves to the L position, which is on the left of anyone looking at F from outside
+    const st = holdState(i), after = Cube.applyAlg(st, 'y');
+    assert.strictEqual(Cube.center(after, 'L'), Cube.center(st, 'F'), 'y moves the front face to the left');
+    assert.strictEqual(Cube.center(after, 'F'), i < 3 ? S[i + 1].center : 'G', 'y brings the next face round');
+    assert.strictEqual(Cube.center(after, 'U'), 'W', 'white stays on top');
+  }
+  // F's columns grow with +x, so the L face (-x) is on the left of a viewer looking at F: that is the learner (rear)
+  assert.ok(Cube.STICKERS.filter((s) => s.face === 'F').every((s) => s.col === s.cubie[0] + 1));
+  assert.deepStrictEqual(rightOf(REAR.learner).map((v) => v + 0), [1, 0, 0]);
+  [1, 2].forEach((i) => assert.ok(/to the left/.test(S[i].tipRear) && /on your right/.test(S[i].tipRear), S[i].tipRear));
+  assert.ok(/to the left/.test(S[3].tipRear) && /left/.test(S[1].tip) && !/right/.test(S[1].tip));
+  // "turn to the left once more, then tip the top of the cube towards you": WHITE faces the camera, BLUE on top
+  const tipped = Cube.applyAlg(holdState(3), "y x'");
+  assert.strictEqual(Cube.center(tipped, 'F'), 'W'); assert.strictEqual(Cube.center(tipped, 'U'), 'B');
+  const g = Cube.applyAlg(holdState(3), 'y');
+  assert.strictEqual(Cube.center(Cube.applyAlg(g, "x'"), 'F'), Cube.center(g, 'U'), "x' brings the top towards you");
+  assert.ok(/tip the top of the cube towards you/.test(S[4].tipRear) && /WHITE faces the camera and BLUE is on top/.test(S[4].tipRear));
+  // "flip the cube over, top over bottom": YELLOW faces the camera, GREEN on top
+  const flipped = Cube.applyAlg(holdState(4), 'x2');
+  assert.strictEqual(Cube.center(flipped, 'F'), 'Y'); assert.strictEqual(Cube.center(flipped, 'U'), 'G');
+  assert.ok(/YELLOW faces the camera and GREEN is on top/.test(S[5].tipRear));
+});
+
+test('rear camera, phone held upright: portrait raw frames scan the cube exactly; messages say "Point the camera"', () => {
+  const truth = randomCube(5150), rnd = Cube.mulberry32(5151);
+  const cols = observeHard(truth, rnd, { gainLo: 0.8, gainHi: 1.2, cast: [1.1, 1, 0.9], gradient: 0.08 });
+  const W = 320, H = 569;                                    // 720 x 1280 shrunk to the sampling width
+  const g = Scanner.guideRect(W, H);
+  assert.ok(Math.abs(g.size - 0.55 * W) < 1e-9 && Math.abs(g.y + g.size / 2 - H / 2) < 1e-9, 'guide: 55% of the short side, centred');
+  const ses = Scanner.createSession({ autoCapture: true, facing: 'environment' });
+  let t = 0, result = null, sawPoint = false;
+  for (let step = 0; step < 6; step++) {
+    const frame = renderFace(cols[Scanner.SCAN_ORDER[step].face], rnd, { w: W, h: H, dx: 0.1, dy: -0.08, rot: 0.03, noise: 4, gradient: 0.06 });
+    const cells = Scanner.sampleCells(frame);
+    for (let k = 0; k < 6; k++, t += 33) {                  // turning: a purple wall, nothing that looks like a face
+      const out = ses.frame(Array.from({ length: 9 }, () => ({ rgb: [128 + rnd() * 4, 40, 170], std: 4, mean: 80 })), t);
+      if (/Point the camera at the [A-Z]+ centre, [A-Z]+ on top/.test(out.info.message) && !/Show the/.test(out.info.message)) sawPoint = true;
+    }
+    for (let k = 0; k < 60; k++, t += 33) { const out = ses.frame(cells, t); if (out.event && out.event.result) result = out.event.result; if (out.event) break; }
+  }
+  assert.ok(sawPoint, 'rear-camera wording in the live messages');
+  assert.ok(result && same(result.state, truth), 'scanned exactly from portrait frames');
+  ses.setFacing('user');
+  assert.strictEqual(ses.facing, 'user');
+});
+
+test('phones: rear camera by default on phones (UA, or touch + narrow screen), front elsewhere', () => {
+  const IPHONE_CHROME = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1';
+  const IPHONE_SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+  const ANDROID_PHONE = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
+  const ANDROID_TABLET = 'Mozilla/5.0 (Linux; Android 14; SM-X710) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const WIN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const env = (userAgent, maxTouchPoints, coarse, screenWidth, screenHeight) => ({ userAgent, maxTouchPoints, coarse, screenWidth, screenHeight });
+  const cases = [
+    [env(IPHONE_CHROME, 5, true, 390, 844), { phone: true, ios: true }, 'environment'],
+    [env(IPHONE_SAFARI, 5, true, 375, 667), { phone: true, ios: true }, 'environment'],
+    [env(ANDROID_PHONE, 5, true, 412, 915), { phone: true, android: true }, 'environment'],
+    [env(ANDROID_TABLET, 10, true, 800, 1280), { phone: false, tablet: true }, 'user'],
+    [env(MAC, 5, true, 1024, 1366), { phone: false, tablet: true, ios: true }, 'user'],     // iPadOS asks for the desktop site
+    [env(MAC, 0, false, 1512, 982), { phone: false, tablet: false, ios: false }, 'user'],
+    [env(WIN, 10, false, 1920, 1080), { phone: false, touch: true }, 'user'],            // a touch-screen laptop
+    [env('SomeBrowser/1.0', 5, true, 390, 844), { phone: true }, 'environment'],         // unknown UA: touch + narrow
+    [env('SomeBrowser/1.0', 0, false, 390, 844), { phone: false }, 'user']               // narrow window, no touch
+  ];
+  cases.forEach(([e, want, facing], n) => {
+    const d = Scanner.deviceInfo(e);
+    Object.keys(want).forEach((k) => assert.strictEqual(d[k], want[k], 'case ' + n + ' ' + k));
+    assert.strictEqual(Scanner.isPhone(e), want.phone, 'case ' + n);
+    assert.strictEqual(Scanner.defaultFacing(e), facing, 'case ' + n + ' facing');
+  });
+  // outside a browser: not a phone, front camera
+  assert.strictEqual(Scanner.defaultFacing(), 'user');
+});
+
+test('camera constraints: facingMode as {ideal}, plainer asks after a failure, no retry after a refusal', () => {
+  const c = Scanner.cameraConstraints({ facing: 'environment' });
+  assert.deepStrictEqual(c.map((x) => x.video), [
+    { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    { facingMode: { ideal: 'environment' } },
+    true
+  ]);
+  c.forEach((x) => assert.strictEqual(x.audio, false));
+  const d = Scanner.cameraConstraints({ deviceId: 'abc', facing: 'user' });
+  assert.deepStrictEqual(d[0].video.deviceId, { exact: 'abc' }, 'a remembered camera first');
+  assert.deepStrictEqual(d[1].video.facingMode, { ideal: 'user' }, 'then the camera facing that way');
+  assert.strictEqual(d[d.length - 1].video, true, 'then any camera');
+  assert.deepStrictEqual(Scanner.cameraConstraints({}).map((x) => x.video), [{ width: { ideal: 1280 }, height: { ideal: 720 } }, true]);
+  JSON.stringify([c, d]).replace(/"exact":"abc"/, '').match(/exact/) && assert.fail('facingMode is never exact');
+  ['OverconstrainedError', 'ConstraintNotSatisfiedError', 'NotFoundError', 'NotReadableError', 'AbortError', 'TypeError'].forEach((n) => assert.ok(Scanner.retryCamera({ name: n }), n));
+  ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].forEach((n) => assert.ok(!Scanner.retryCamera({ name: n }), n));
+  // which way a camera faces
+  assert.strictEqual(Scanner.guessFacing({ facingMode: 'environment' }, 'FaceTime HD Camera', 'user'), 'environment', 'the track says');
+  assert.strictEqual(Scanner.guessFacing({}, 'Back Camera', 'user'), 'environment');
+  assert.strictEqual(Scanner.guessFacing({}, 'Back Ultra Wide Camera', 'user'), 'environment');
+  assert.strictEqual(Scanner.guessFacing({}, 'Front Camera', 'environment'), 'user');
+  assert.strictEqual(Scanner.guessFacing({}, 'FaceTime HD Camera', 'environment'), 'user');
+  assert.strictEqual(Scanner.guessFacing({}, 'camera2 0, facing back', 'user'), 'environment');
+  assert.strictEqual(Scanner.guessFacing({}, 'USB Camera', 'environment'), 'environment', 'otherwise what was asked for');
+  assert.strictEqual(Scanner.guessFacing(null, '', undefined), 'user');
+});
+
+test('camera help covers iPhone (Settings > Chrome > Camera, Safari aA menu) and https', () => {
+  const m = Scanner.CAMERA_MESSAGES;
+  assert.ok(/iPhone/.test(m.denied) && /Settings app > Chrome \(or Safari\) > Camera/.test(m.denied) && /aA/.test(m.denied));
+  assert.ok(/https/.test(m.insecure));
+});
+
 // ------------------------------------------------------------------ colour maths
 test('rgbToLab matches reference CIE Lab (D65) values', () => {
   const cases = [
@@ -213,10 +384,11 @@ test('sampleCells: per-channel median and uniformity from a synthetic raw frame'
 
 // ------------------------------------------------------------------ synthetic raw frames (pixel level)
 /* renderFace(colours9, rnd, p) -> {data, width, height}: a 320x180 raw frame (the size the controller
- * samples) with one cube face: black body, stickers with gaps, shifted/scaled/rotated off the guide,
- * a lighting gradient, glare blobs (radius in cells, soft edge) and sensor noise. */
+ * samples; p.w x p.h for others, e.g. 320x569 from a phone held upright) with one cube face: black body,
+ * stickers with gaps, shifted/scaled/rotated off the guide, a lighting gradient, glare blobs (radius in
+ * cells, soft edge) and sensor noise. */
 function renderFace(cols, rnd, p) {
-  const w = 320, h = 180, data = new Uint8ClampedArray(w * h * 4);
+  const w = p.w || 320, h = p.h || 180, data = new Uint8ClampedArray(w * h * 4);
   const g = Scanner.guideRect(w, h), pitch = g.cell * (p.scale || 1);
   const cx = g.x + g.size / 2 + (p.dx || 0) * g.cell, cy = g.y + g.size / 2 + (p.dy || 0) * g.cell;
   const cos = Math.cos(p.rot || 0), sin = Math.sin(p.rot || 0), gap = p.gapFrac == null ? 0.06 : p.gapFrac;
@@ -720,8 +892,13 @@ function withMockDom(fn) {
   const env = { now: 0, frame: null, rafs: new Map(), nextRaf: 0, body: null, videos: [] };
   const noopCtx = (extra) => new Proxy(extra || {}, { get: (t, k) => (k in t ? t[k] : k === 'measureText' ? () => ({ width: 50 }) : () => {}), set: (t, k, v) => { t[k] = v; return true; } });
   env.body = { children: [], appendChild(el) { this.children.push(el); el.parentNode = this; }, removeChild(el) { this.children.splice(this.children.indexOf(el), 1); el.parentNode = null; } };
+  env.docListeners = {};
+  env.videoSize = [1280, 720];
   globalThis.document = {
     body: env.body,
+    hidden: false,
+    addEventListener(t, f) { (env.docListeners[t] = env.docListeners[t] || []).push(f); },
+    removeEventListener(t, f) { env.docListeners[t] = (env.docListeners[t] || []).filter((x) => x !== f); },
     createElement(tag) {
       if (tag === 'canvas') return { width: 0, height: 0, getContext: () => noopCtx({ getImageData: () => env.frame }) };
       const listeners = {};
@@ -730,9 +907,11 @@ function withMockDom(fn) {
         setAttribute() {}, pause() {},
         addEventListener(t, f) { (listeners[t] = listeners[t] || []).push(f); },
         removeEventListener(t, f) { listeners[t] = (listeners[t] || []).filter((x) => x !== f); },
+        paused: true,
         play() {   // like a browser: the first frame arrives (loadeddata), then play() resolves
+          if (env.refusePlay) { env.refusePlay--; return Promise.reject(Object.assign(new Error('tap first'), { name: 'NotAllowedError' })); }
           return new Promise((res) => setTimeout(() => {
-            v.readyState = 4; v.videoWidth = 1280; v.videoHeight = 720;
+            v.readyState = 4; v.videoWidth = env.videoSize[0]; v.videoHeight = env.videoSize[1]; v.paused = false;
             (listeners.loadeddata || []).slice().forEach((f) => f());
             res();
           }, 0));
@@ -753,7 +932,8 @@ function withMockDom(fn) {
       cbs.forEach((cb) => cb());
     }
   };
-  env.track = () => { const tr = { stopped: false, listeners: {}, stop() { this.stopped = true; }, addEventListener(t, f) { this.listeners[t] = f; } }; return tr; };
+  env.track = (settings, label) => { const tr = { stopped: false, listeners: {}, label: label || '', stop() { this.stopped = true; }, addEventListener(t, f) { this.listeners[t] = f; }, getSettings: () => Object.assign({}, settings || {}) }; return tr; };
+  env.setHidden = (b) => { globalThis.document.hidden = b; (env.docListeners.visibilitychange || []).slice().forEach((f) => f()); };
   env.stream = (tr) => ({ getTracks: () => [tr], getVideoTracks: () => [tr] });
   const restore = () => {
     ['document', 'window', 'performance', 'navigator'].forEach((k) => { if (saved[k]) Object.defineProperty(globalThis, k, saved[k]); else delete globalThis[k]; });
@@ -845,6 +1025,180 @@ testAsync('controller: camera errors, a camera that drops out, and stop() while 
   env.videos[v0].play = () => new Promise(() => {});      // never starts
   ctrl.stop();
   await p3;
+}));
+
+// a 2D context that records whether the preview was mirrored when the video frame was drawn
+function previewCanvas() {
+  const log = { frames: 0, mirroredFrames: 0, flipped: false };
+  const ctx = new Proxy({}, {
+    get(t, k) {
+      if (k in t) return t[k];
+      if (k === 'measureText') return () => ({ width: 50 });
+      if (k === 'save' || k === 'restore' || k === 'setTransform') return () => { log.flipped = false; };
+      if (k === 'scale') return (x) => { if (x < 0) log.flipped = true; };
+      if (k === 'drawImage') return () => { log.frames++; if (log.flipped) log.mirroredFrames++; };
+      return () => {};
+    },
+    set(t, k, v) { t[k] = v; return true; }
+  });
+  return { canvas: { width: 0, height: 0, getContext: () => ctx }, log };
+}
+function phoneNavigator(env, gumImpl) {
+  Object.defineProperty(globalThis, 'window', { value: { isSecureContext: true, location: { protocol: 'https:' } }, configurable: true, writable: true });
+  const calls = [];
+  Object.defineProperty(globalThis, 'navigator', { value: { mediaDevices: { getUserMedia: (c) => { calls.push(c); return gumImpl(c, calls.length); } } }, configurable: true, writable: true });
+  return calls;
+}
+// a phone camera: facing from the request, with an id and a label like an iPhone's
+function phoneTrack(env, c) {
+  const f = (c.video && c.video.facingMode && c.video.facingMode.ideal) || (c.video && c.video.deviceId && c.video.deviceId.exact === 'front-1' ? 'user' : 'environment');
+  return env.track({ facingMode: f, deviceId: f === 'user' ? 'front-1' : 'back-1' }, f === 'user' ? 'Front Camera' : 'Back Camera');
+}
+
+testAsync('controller (phone): rear camera, constraint fallback, no mirroring, raw-frame sampling scans exactly', () => withMockDom(async (env) => {
+  env.videoSize = [720, 1280];                                 // an iPhone held upright sends upright frames
+  const calls = phoneNavigator(env, (c, n) => n === 1
+    ? Promise.reject(Object.assign(new Error('no'), { name: 'OverconstrainedError', constraint: 'width' }))
+    : Promise.resolve(env.stream(phoneTrack(env, c))));
+  const truth = randomCube(2468), rnd = Cube.mulberry32(2469);
+  const cols = observeHard(truth, rnd, { gainLo: 0.85, gainHi: 1.15, cast: [1.1, 1, 0.9] });
+  const frames = Scanner.SCAN_ORDER.map((e) => renderFace(cols[e.face], rnd, { w: 320, h: 569, dx: 0.05, dy: 0.05, rot: -0.02, noise: 4, gradient: 0.08 }));
+  const { canvas, log } = previewCanvas();
+  const states = [], errors = [], captures = [];
+  let complete = null, info = null;
+  const ctrl = Scanner.createController({ canvas, mirror: true, facing: 'environment', onState: (s) => states.push(s), onError: (e) => errors.push(e),
+    onFrame: (i) => { info = i; }, onCapture: (s) => captures.push(s), onComplete: (r) => { complete = r; } });
+  env.frame = frames[0];
+  await ctrl.start();
+  assert.deepStrictEqual(calls[0].video.facingMode, { ideal: 'environment' });
+  assert.deepStrictEqual(calls[1].video, { facingMode: { ideal: 'environment' } }, 'asked again, more plainly');
+  assert.strictEqual(errors.length, 0);
+  assert.strictEqual(ctrl.getFacing(), 'environment');
+  assert.strictEqual(ctrl.getMirror(), false, 'a rear camera is never mirrored, whatever the mirror setting');
+  assert.strictEqual(ctrl.getDeviceId(), 'back-1');
+  assert.deepStrictEqual(states, ['starting', 'live']);
+  // nothing like a face in view yet: the message is worded for pointing the phone
+  env.frame = { data: new Uint8ClampedArray(320 * 569 * 4).map((_, i) => [130, 40, 170, 255][i % 4]), width: 320, height: 569 };
+  env.pump(3);
+  assert.ok(/Point the camera at the GREEN centre, WHITE on top/.test(info.message), info.message);
+  for (let step = 0; step < 6; step++) {
+    env.frame = frames[step];
+    for (let k = 0; k < 60 && captures.length <= step; k++) env.pump(1);
+    assert.strictEqual(captures.length, step + 1, 'step ' + step + ': ' + (info && info.message));
+    env.frame = { data: new Uint8ClampedArray(320 * 569 * 4).map(() => Math.random() * 255), width: 320, height: 569 };
+    env.pump(5);
+  }
+  assert.ok(complete && same(complete.state, truth), 'the facelet mapping is unchanged for the rear camera');
+  assert.ok(log.frames > 0 && log.mirroredFrames === 0, 'preview drawn unmirrored');
+  ctrl.stop();
+  assert.ok(env.rafs.size === 0 && (env.docListeners.visibilitychange || []).length === 0, 'loop and visibility listener gone');
+}));
+
+testAsync('controller (phone): front camera is mirrored; switchCamera releases the old camera first', () => withMockDom(async (env) => {
+  let lastTrack = null, oldStoppedBeforeAsk = null;
+  const calls = phoneNavigator(env, (c) => {
+    if (lastTrack) oldStoppedBeforeAsk = lastTrack.stopped;
+    lastTrack = phoneTrack(env, c);
+    return Promise.resolve(env.stream(lastTrack));
+  });
+  const { canvas, log } = previewCanvas();
+  const ctrl = Scanner.createController({ canvas, mirror: true, facing: 'user' });
+  env.frame = renderFace(Scanner.SCAN_ORDER.map(() => PALETTE.G)[0] && Array(9).fill(PALETTE.G), Cube.mulberry32(1), {});
+  await ctrl.start();
+  assert.strictEqual(ctrl.getFacing(), 'user');
+  assert.strictEqual(ctrl.getMirror(), true);
+  env.pump(3);
+  assert.ok(log.mirroredFrames > 0, 'front camera preview mirrored (selfie view)');
+  const first = lastTrack;
+  await ctrl.switchCamera();
+  assert.deepStrictEqual(calls[calls.length - 1].video.facingMode, { ideal: 'environment' });
+  assert.strictEqual(oldStoppedBeforeAsk, true, 'the front camera was released before the rear one was asked for (a phone opens one at a time)');
+  assert.ok(first.stopped);
+  assert.strictEqual(ctrl.getFacing(), 'environment');
+  assert.strictEqual(ctrl.getMirror(), false);
+  log.mirroredFrames = 0; env.pump(3);
+  assert.strictEqual(log.mirroredFrames, 0);
+  ctrl.setMirror(false);
+  await ctrl.switchCamera();
+  assert.strictEqual(ctrl.getFacing(), 'user');
+  assert.strictEqual(ctrl.getMirror(), false, 'mirror setting off: front camera not mirrored either');
+  // a stream handed over (the demo camera) faces the way the caller says
+  const ctrl2 = Scanner.createController({ canvas: previewCanvas().canvas });
+  await ctrl2.useStream(env.stream(env.track()), { facing: 'environment' });
+  assert.strictEqual(ctrl2.getFacing(), 'environment');
+  assert.strictEqual(ctrl2.session.facing, 'environment', 'messages use the rear-camera wording');
+  ctrl2.setFacing('user');
+  assert.ok(ctrl2.getFacing() === 'user' && ctrl2.getMirror() === true);
+  ctrl.stop(); ctrl2.stop();
+}));
+
+testAsync('controller (phone): the app goes to the background and back; a camera taken away meanwhile is reopened', () => withMockDom(async (env) => {
+  let lastTrack = null;
+  const calls = phoneNavigator(env, (c) => { lastTrack = phoneTrack(env, c); return Promise.resolve(env.stream(lastTrack)); });
+  const truth = randomCube(97), rnd = Cube.mulberry32(98);
+  const cols = observeHard(truth, rnd, { gainLo: 0.9, gainHi: 1.1 });
+  const frames = Scanner.SCAN_ORDER.map((e) => renderFace(cols[e.face], rnd, { noise: 3 }));
+  const states = [], errors = [], captures = [];
+  const ctrl = Scanner.createController({ canvas: previewCanvas().canvas, facing: 'environment', onState: (s) => states.push(s), onError: (e) => errors.push(e), onCapture: (s) => captures.push(s) });
+  env.frame = frames[0];
+  await ctrl.start();
+  for (let k = 0; k < 60 && !captures.length; k++) env.pump(1);
+  assert.deepStrictEqual(captures, [0]);
+  const before = lastTrack;
+  env.setHidden(true);
+  assert.ok(before.stopped, 'camera released while in the background');
+  assert.strictEqual(ctrl.getState(), 'paused');
+  assert.strictEqual(env.rafs.size, 0, 'no frames read in the background');
+  const n = calls.length;
+  env.setHidden(false);
+  await new Promise((r) => setTimeout(r, 5));
+  assert.strictEqual(calls.length, n + 1, 'reopened on return');
+  assert.deepStrictEqual(calls[n].video.deviceId, { exact: 'back-1' }, 'the same camera');
+  assert.strictEqual(ctrl.getState(), 'live');
+  assert.strictEqual(ctrl.session.step, 1, 'the faces scanned so far are kept');
+  // iOS ends the track while the app is away: no error, reopened on return
+  lastTrack.listeners.ended && (globalThis.document.hidden = true, lastTrack.listeners.ended());
+  assert.strictEqual(errors.length, 0);
+  env.setHidden(false);
+  await new Promise((r) => setTimeout(r, 5));
+  assert.strictEqual(ctrl.getState(), 'live');
+  assert.strictEqual(errors.length, 0);
+  // ...but a camera unplugged while the page is in front (a while after coming back) is reported as before
+  env.now += 5000;
+  lastTrack.listeners.ended();
+  assert.ok(errors.length === 1 && errors[0].code === 'notfound');
+  ctrl.stop();
+}));
+
+testAsync('controller (phone): a refused play() waits for a tap (blocked), and a camera that will not reopen by itself too', () => withMockDom(async (env) => {
+  let refuse = false;
+  phoneNavigator(env, (c) => refuse ? Promise.reject({ name: 'NotAllowedError' }) : Promise.resolve(env.stream(phoneTrack(env, c))));
+  const states = [], errors = [];
+  const ctrl = Scanner.createController({ canvas: previewCanvas().canvas, facing: 'environment', startTimeout: 50, onState: (s) => states.push(s), onError: (e) => errors.push(e) });
+  env.refusePlay = 1;
+  await ctrl.start();                                          // resolves: the camera is on, the video just needs a tap
+  assert.strictEqual(ctrl.getState(), 'blocked');
+  await new Promise((r) => setTimeout(r, 80));
+  assert.strictEqual(errors.length, 0, 'no "no picture is arriving" timeout while waiting for the tap');
+  assert.strictEqual(await ctrl.resume(), true, 'a tap plays it');
+  assert.strictEqual(ctrl.getState(), 'live');
+  // back from the background, but the camera will not reopen without a tap: blocked, not an error
+  env.setHidden(true);
+  refuse = true;
+  env.setHidden(false);
+  await new Promise((r) => setTimeout(r, 5));
+  assert.strictEqual(ctrl.getState(), 'blocked');
+  assert.strictEqual(errors.length, 0);
+  refuse = false;
+  await ctrl.resume();                                         // the tap reopens it
+  assert.strictEqual(ctrl.getState(), 'live');
+  // a real refusal on a tap is reported
+  env.setHidden(true); refuse = true; env.setHidden(false);
+  await new Promise((r) => setTimeout(r, 5));
+  await ctrl.resume();
+  assert.ok(errors.length === 1 && errors[0].code === 'denied', JSON.stringify(errors));
+  ctrl.stop();
+  assert.strictEqual(ctrl.getState(), 'idle');
 }));
 
 // ------------------------------------------------------------------ camera plumbing (no DOM)

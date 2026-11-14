@@ -16,7 +16,7 @@
   header p { margin: 4px 0 0; color: var(--muted); max-width: 900px; }
   main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; padding: 10px 16px; }
   @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
-  .stage canvas#view { width: 100%; height: auto; display: block; background: #000; border-radius: 10px; }
+  .stage canvas#view { width: 100%; height: auto; max-height: 78vh; object-fit: contain; display: block; background: #000; border-radius: 10px; }
   .status { display: flex; gap: 10px; align-items: baseline; margin-top: 8px; flex-wrap: wrap; }
   .status #stepLabel { font-weight: 600; }
   .status #msg { color: var(--muted); }
@@ -54,8 +54,10 @@
 <body>
 <header>
   <h1>Scanner simulator</h1>
-  <p>Runs <code>CC.Scanner.createController</code> against <code>createFakeCamera</code>: a synthetic, unmirrored 1280x720 webcam
-    showing a scrambled cube. With "Auto-turn" on, the fake learner turns to the next face after each capture.</p>
+  <p>Runs <code>CC.Scanner.createController</code> against <code>createFakeCamera</code>: a synthetic, unmirrored camera
+    showing a scrambled cube (1280x720 laptop webcam, or 720x1280 from a phone held upright). With "Auto-turn" on, the fake
+    learner turns to the next face after each capture. "Back camera" pretends to be a phone's rear camera pointed at the cube:
+    never mirrored, instructions worded "Point the camera at ...", same facelet mapping.</p>
 </header>
 <main>
   <section class="stage">
@@ -83,7 +85,13 @@
     </fieldset>
     <fieldset>
       <legend>Scanner</legend>
-      <label class="check"><input type="checkbox" id="mirror" checked> Mirror preview (selfie view)</label>
+      <label class="row" style="grid-template-columns: 80px 1fr">Camera
+        <select id="facing" aria-label="Camera">
+          <option value="user">Front (laptop, selfie)</option>
+          <option value="environment">Back (phone at the cube)</option>
+        </select></label>
+      <label class="check"><input type="checkbox" id="portrait"> Phone held upright (720 x 1280 frames)</label>
+      <label class="check"><input type="checkbox" id="mirror" checked> Mirror preview (front camera only)</label>
       <label class="check"><input type="checkbox" id="auto" checked> Auto-capture</label>
       <label class="check"><input type="checkbox" id="autoturn" checked> Auto-turn to the next face</label>
       <label class="check"><input type="checkbox" id="wrongway"> Turn the wrong way (ORANGE before RED)</label>
@@ -98,6 +106,10 @@
         <button id="wrong">Show a wrong face</button>
         <button id="hide">Take the cube away</button>
         <button id="reset">Restart scan</button>
+      </div>
+      <div class="btns" style="margin-top:6px">
+        <button id="pause">Leave the app (pause)</button>
+        <button id="resume">Come back (resume)</button>
       </div>
       <div class="btns" style="margin-top:6px">
         <select id="redoStep" aria-label="Face to redo"></select>
@@ -147,6 +159,7 @@
   function lightOpts() {
     var o = { cast: +$('cast').value, exposure: +$('exposure').value, noise: +$('noise').value, glare: +$('glare').value, jitter: +$('jitter').value };
     o.palette = PALETTES[$('palette').value] || Scanner.DEFAULT_RGB;
+    o.scene = $('facing').value === 'environment' ? 'rear' : 'selfie';
     return o;
   }
 
@@ -184,8 +197,10 @@
   }
 
   var lastChipKey = '';
+  var camState = 'idle';
+  function onState(s) { camState = s; if (s !== 'live') $('msg').textContent = '[camera ' + s + ']'; }
   function onFrame(info) {
-    $('stepLabel').textContent = info.complete ? 'Done' : 'Step ' + (info.step + 1) + '/6';
+    $('stepLabel').textContent = (info.complete ? 'Done' : 'Step ' + (info.step + 1) + '/6') + ' · ' + (ctrl.getFacing() === 'environment' ? 'back' : 'front') + ' camera' + (ctrl.getMirror() ? ', mirrored' : '');
     $('msg').textContent = info.message || '';
     $('stab').style.width = Math.round(100 * (info.ready && info.armed ? info.stability : 0)) + '%';
     var key = info.step + ':' + info.captured.join(',');
@@ -222,6 +237,7 @@
     result.warnings.forEach(function (w) { lines.push('warning: ' + w); });
     lines.push('white balance: ' + result.lighting.whiteBalance.map(function (v) { return v.toFixed(2); }).join(' / '));
     lines.push('face exposure: ' + result.lighting.faceGain.map(function (v) { return v.toFixed(2); }).join(' / '));
+    lines.push('camera: ' + ctrl.getFacing() + (ctrl.getMirror() ? ' (mirrored preview)' : ' (unmirrored preview)') + ', frames ' + fake.size().width + 'x' + fake.size().height);
     lines.push('scan took ' + secs + ' s');
     $('report').textContent = lines.join('\n');
     $('report').className = wrong.length ? 'bad' : 'ok';
@@ -251,13 +267,14 @@
     if (ctrl) ctrl.stop();
     if (fake) fake.destroy();
     swapped = false; hidden = false; $('hide').textContent = 'Take the cube away';
-    fake = Scanner.createFakeCamera(state, Object.assign({ face: 0, seed: 7 }, lightOpts()));
+    var facing = $('facing').value, size = $('portrait').checked ? { width: 720, height: 1280 } : {};
+    fake = Scanner.createFakeCamera(state, Object.assign({ face: 0, seed: 7, scene: facing === 'environment' ? 'rear' : 'selfie' }, size, lightOpts()));
     $('rawHost').replaceChildren(fake.canvas);
     ctrl = Scanner.createController({
-      canvas: $('view'), mirror: $('mirror').checked, autoCapture: $('auto').checked,
-      onFrame: onFrame, onCapture: onCaptureAll, onComplete: onComplete, onError: onError
+      canvas: $('view'), mirror: $('mirror').checked, autoCapture: $('auto').checked, facing: facing,
+      onFrame: onFrame, onCapture: onCaptureAll, onComplete: onComplete, onError: onError, onState: onState
     });
-    ctrl.useStream(fake.stream).catch(function () { /* reported via onError */ });
+    ctrl.useStream(fake.stream, { facing: facing }).catch(function () { /* reported via onError */ });
     startedAt = performance.now();
     renderNet($('netTrue'), state);
     $('netScan').replaceChildren();
@@ -282,6 +299,14 @@
     input.addEventListener('input', function () { show(); if (fake) fake.set(lightOpts()); });
   });
   $('mirror').addEventListener('change', function () { ctrl.setMirror($('mirror').checked); });
+  $('facing').addEventListener('change', function () {
+    var f = $('facing').value;
+    ctrl.setFacing(f);
+    fake.set(Object.assign({ scene: f === 'environment' ? 'rear' : 'selfie' }, lightOpts()));
+  });
+  $('portrait').addEventListener('change', restart);
+  $('pause').addEventListener('click', function () { ctrl.pause(); });
+  $('resume').addEventListener('click', function () { ctrl.resume(); });
   $('auto').addEventListener('change', function () { ctrl.setAutoCapture($('auto').checked); });
   $('capture').addEventListener('click', function () { ctrl.captureNow(); });
   $('wrong').addEventListener('click', function () { var s = ctrl.session.step; fake.showFace(((s < 6 ? s : 0) + 2) % 6); });

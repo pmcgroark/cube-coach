@@ -1302,7 +1302,11 @@
       h('button', {
         type: 'button', class: 'btn btn-secondary',
         onClick: function () { go('solve', { device: 'physical', source: 'drill', stage: st.id }); }
-      }, icon('hand', 18), 'Do it with my real cube'));
+      }, icon('hand', 18), 'Do it with my real cube'),
+      st.id === 'middle' ? h('button', {
+        type: 'button', class: 'btn btn-secondary',
+        onClick: function () { go('gym'); }
+      }, icon('zap', 18), 'Middle Layer Gym') : null);
 
     el.appendChild(h('div', { class: 'stack stack-lg cc-lesson' },
       h('div', { class: 'row row-between' },
@@ -1319,6 +1323,10 @@
         h('p', { class: 'm-0' }, st.goal),
         st.why ? h('h3', { class: 'h4 m-0 mt-2' }, 'Why it matters') : null,
         st.why ? h('p', { class: 'muted m-0' }, st.why) : null),
+      st.id === 'middle' ? h('section', { class: 'card card-accent stack stack-sm', 'aria-labelledby': 'cc-lesson-gym' },
+        h('h2', { class: 'h3 m-0', id: 'cc-lesson-gym' }, 'Stuck? Go to the gym'),
+        h('p', { class: 'm-0' }, 'The Middle Layer Gym has short exercises for the four things that trip people up here: remembering the moves, seeing what to do, stuck edges and losing your place. Most of them need no cube.'),
+        h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn btn-primary', onClick: function () { go('gym'); } }, icon('zap', 18), 'Go to the gym'))) : null,
       h('section', { class: 'stack stack-sm', 'aria-labelledby': 'cc-lesson-watch' },
         h('div', { class: 'cc-sec-head' },
           h('div', null, h('h2', { id: 'cc-lesson-watch' }, 'Watch it done'),

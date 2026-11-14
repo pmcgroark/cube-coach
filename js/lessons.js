@@ -323,13 +323,17 @@
       title: 'Middle Layer',
       tagline: 'Slot the four side edges: right or left.',
       goal: 'Place the four middle-layer edges so the first two layers are complete.',
-      why: 'This finishes the first two layers, two-thirds of the cube. Both algorithms take part of the white layer apart and put it back exactly, so your first layer is safe.',
+      why: 'This finishes the first two layers, two-thirds of the cube. Both algorithms take part of the white layer apart and put it back exactly: the first half lifts the white corner out and parks it on top next to the edge, and the second half puts them back into the slot together, as a pair. So the white layer looks broken half-way and is whole again at the end.',
       howTo: [
         'Look in the top layer for an edge with NO yellow. Edges with yellow belong to the last layer, so skip them.',
         "The edge's side sticker tells you which centre to line up with. Turn the top until that sticker sits above the matching centre. You'll see an upside-down T of one colour.",
         "Turn the cube (y) so that centre faces you. Now look at the edge's top colour: it matches either the right centre or the left centre. That's the way it goes.",
         "Goes right: U R U' R' U' F' U F. Goes left: U' L' U L U F U' F'. They are mirror images of each other.",
-        "No yellow-free edge on top, but the middle isn't finished? An edge is stuck in a slot (wrong place, or flipped). Hold that slot at front-right, do the right algorithm once to pop it out, then insert it properly."
+        "No yellow-free edge on top, but the middle isn't finished? An edge is stuck in a slot (wrong place, or flipped). Hold that slot at front-right, do the right algorithm once to pop it out, then insert it properly.",
+        "Learn each algorithm as two halves of four moves. Right: U R U' R' (away, up, back, down), then U' F' U F (aside, open, back, close).",
+        "Left is the mirror of right: swap R for L and turn every move the other way. U' L' U L, then U F U' F'. Same rhythm, other hand, so there is really only one thing to remember.",
+        'Check yourself after the first half: the edge is back on top at the front, and the white corner sits right next to it with its white sticker facing out to the side (right for the right algorithm, left for the left one). The white layer has a gap there: that is normal.',
+        "Lost your place? Don't turn the whole cube in the middle of an algorithm. If you know where you are, just finish it. If not, undo the moves you made in reverse order, each one turned the other way, until the edge is back in the T, then start again from the first move."
       ],
       recognise: [
         { caseId: 'edge-right', name: 'Goes right', look: "Upside-down T at the front; the edge's top colour matches the RIGHT centre.", action: "U R U' R' U' F' U F" },
@@ -341,13 +345,42 @@
       mnemonics: [
         'Make the T, then follow the top colour.',
         "Right: away (U), right-hand part (R U' R'), back (U'), front part (F' U F).",
-        'Left is the mirror: swap R for L and reverse every turn.'
+        'Left is the mirror: swap R for L and reverse every turn.',
+        'Two halves, one rhythm: away, up, back, down; then aside, open, back, close.',
+        'First half takes the corner out; second half puts the pair in.'
       ],
       mistakes: [
         'Inserting an edge that has yellow on it. Check both stickers.',
         'Starting the algorithm before making the upside-down T. Line the side colour up with its centre first.',
         "Choosing the wrong side. Look at the edge's TOP colour and find that centre: right or left?",
-        'Mixing the two algorithms half-way through. Say "right" or "left" out loud before you start.'
+        'Mixing the two algorithms half-way through. Say "right" or "left" out loud before you start.',
+        'Turning the whole cube in the middle of the algorithm. Keep the T at the front until all eight moves are done.',
+        'Stopping half-way because the white layer looks broken. It always looks broken in the middle; finish the eight moves and it comes back.',
+        "A slip, like R instead of R'. Undo it straight away (turn it back) and carry on. If you just keep going it won't come out right.",
+        'Popping out a stuck edge from the wrong place. The right algorithm only changes the front-right slot, so turn the cube until the stuck edge is there first.',
+        'Lining up an edge with yellow on top. It can look like a T, but yellow matches neither side centre: skip it.'
+      ],
+      halves: [
+        { algId: 'mid-right', first: "U R U' R'", second: "U' F' U F", rhythm: ['away, up, back, down', 'aside, open, back, close'],
+          firstDoes: 'Takes the white corner out of its slot and parks it on top, right next to the edge.',
+          secondDoes: 'Puts the corner and the edge back into the slot together.' },
+        { algId: 'mid-left', first: "U' L' U L", second: "U F U' F'", rhythm: ['away, up, back, down', 'aside, open, back, close'],
+          firstDoes: 'Takes the white corner out of its slot and parks it on top, right next to the edge.',
+          secondDoes: 'Puts the corner and the edge back into the slot together.' }
+      ],
+      mirrorRule: 'Left is the mirror of right: swap R for L, and turn every move the other way (U becomes U\', F\' becomes F).',
+      whyItWorks: 'The first half takes the white corner out of its slot and parks it on top, right next to the edge, with matching colours touching. The second half puts the corner and the edge back into the slot together, as a pair. Everything else in the first two layers ends up exactly where it was.',
+      landmarks: [
+        'After the first half: the edge is back at the front where it started, and the white corner sits on top right next to it, white sticker facing out to the side. The only piece missing from the white layer is that corner: normal.',
+        'After all eight moves: the edge is in its slot, the white layer is whole again, and middle edges you placed before are still there.',
+        'From the 2nd move to the 7th the white layer always looks broken (after the F turn even the white cross has a piece out). Keep going.'
+      ],
+      lostPlace: [
+        "Don't turn the whole cube in the middle of an algorithm: keep the T at the front.",
+        'If you know where you are, finish the algorithm. The checkpoint helps: if the edge and the white corner sit side by side on top at the front and the only piece missing from the white layer is that corner, the first half is done.',
+        'If you are not sure, undo the moves you made in reverse order, each one turned the other way, until the edge is back in the T. Then start again from the first move.',
+        'The white layer looking broken in the middle of the algorithm is normal. It only matters if it is still broken after the eighth move.',
+        'Totally lost? On the virtual cube ask for a hint; with a real cube, rescan it. The coach can find the way back from any position.'
       ],
       hints: [
         'Find a top-layer edge without yellow. Its two colours tell you which slot it belongs in.',
@@ -796,6 +829,112 @@
         ],
         checkpoints: [
           { at: 8, kind: 'next', prompt: 'The edge popped out at the back, green facing the back. What lines it up with the green centre?', options: ['U', "U'", 'U2'], answer: 2, explain: 'A half turn brings the back of the top layer to the front.' }
+        ]
+      },
+      {
+        id: 'middle-right-back', title: 'Edge at the back',
+        summary: "An edge can start anywhere on top: one U, U' or U2 brings it round to its centre.",
+        caseIds: ['edge-right'],
+        setup: "F R U R' U' F2 U' F U R U R' U",
+        moves: "U2 U R U' R' U' F' U F",
+        narration: [
+          { at: 0, text: 'The only top edge without yellow is green–orange, at the back: green faces the back and orange is on top. The green centre is in front, so a half turn of the top (U2) brings the edge round above it.' },
+          { at: 1, text: "Upside-down T, orange on top, and orange is the right centre: right algorithm. First half, U R U' R': away, up, back, down." },
+          { at: 5, text: "Half-way: the edge is back at the front and the white corner sits right next to it on top. Second half, U' F' U F: aside, open, back, close." },
+          { at: 9, text: 'Slotted, and the white layer is whole again.' }
+        ],
+        checkpoints: [
+          { at: 0, kind: 'next', prompt: 'Green–orange is on top at the back, green facing the back. Which turn brings it above the green centre?', options: ['U', "U'", 'U2'], answer: 2, explain: 'A half turn brings the back of the top layer round to the front.' },
+          { at: 1, kind: 'alg', answerAlg: 'mid-right', prompt: 'Upside-down T at the front, orange on top, and orange is the right centre. Which algorithm?', options: ['Middle edge: right', 'Middle edge: left'], answer: 0, explain: 'The top colour matches the right centre, so it goes right.' }
+        ]
+      },
+      {
+        id: 'middle-right-turn', title: 'Not above its own colour',
+        summary: 'Line an edge up with the centre of its SIDE colour, not whatever centre it happens to be above.',
+        caseIds: ['edge-right'],
+        setup: "R B U B' U' R2 U' R U B U B'",
+        moves: "y U' U R U' R' U' F' U F",
+        narration: [
+          { at: 0, text: 'The only top edge without yellow is orange–blue, at the front. It sits above the green centre, but its side sticker is orange, not green, so this is not a T. Turn the whole cube (y) so the orange centre faces you.' },
+          { at: 1, text: "Orange faces you now and the edge has moved to the top-left. U' brings it to the front, right above the orange centre: upside-down T." },
+          { at: 2, text: 'Its top colour is blue, and blue is now the right centre: right algorithm.' },
+          { at: 10, text: 'Slotted between orange and blue. Face the centre of the side colour first, then line the edge up.' }
+        ],
+        checkpoints: [
+          { at: 0, kind: 'next', prompt: 'Orange–blue is at the top front with orange facing you, but the front centre is green. What first?', options: ['y', "U R U' R' U' F' U F", "U' L' U L U F U' F'"], answer: 0, explain: 'Its side colour is orange, so turn the whole cube until orange faces you (y), then line it up.' },
+          { at: 2, kind: 'alg', answerAlg: 'mid-right', prompt: 'Orange in front, the T is made, blue on top, and blue is the right centre. Which algorithm?', options: ['Middle edge: right', 'Middle edge: left'], answer: 0, explain: 'The top colour matches the right centre, so it goes right.' }
+        ]
+      },
+      {
+        id: 'middle-two', title: 'Two edges in a row',
+        summary: 'One edge at a time: insert it, then find the next one.',
+        caseIds: ['edge-right', 'edge-left'],
+        setup: "L U L' U' B' U' B U' F' U' F U R U R' U2",
+        moves: "U U R U' R' U' F' U F y' U2 U' L' U L U F U' F'",
+        narration: [
+          { at: 0, text: 'Two top edges have no yellow: green–orange on the right and red–blue on the left. Do one at a time. Green–orange first: its side sticker is green, and green is in front, so U brings it round above the green centre.' },
+          { at: 1, text: 'Orange on top, and orange is the right centre: right algorithm.' },
+          { at: 9, text: "One in. Now red–blue: it has moved to the top-right, red on its side. Turn the cube (y') so the red centre faces you." },
+          { at: 10, text: 'The edge is at the back now, red facing the back. U2 brings it to the front, above red.' },
+          { at: 11, text: 'Blue on top, and blue is the left centre: left algorithm.' },
+          { at: 19, text: 'Two in a row. Each algorithm leaves the edges you have already placed exactly where they were.' }
+        ],
+        checkpoints: [
+          { at: 9, kind: 'next', prompt: 'Green–orange is in. Red–blue is at the top-right, red on its side, and the red centre is on the left. First move?', options: ["y'", 'y', 'U'], answer: 0, explain: "y' spins the cube so the LEFT face (red) comes to the front." },
+          { at: 11, kind: 'alg', answerAlg: 'mid-left', prompt: 'Red in front, the T is made, blue on top, and blue is the left centre. Which algorithm?', options: ['Middle edge: right', 'Middle edge: left'], answer: 1, explain: 'The top colour matches the left centre, so it goes left.' }
+        ]
+      },
+      {
+        id: 'middle-wrong-slot', title: 'Edge in the wrong slot',
+        summary: 'Insert the edge that belongs in that slot: it kicks the wrong one out to the top.',
+        caseIds: ['edge-left', 'edge-right'],
+        setup: "F' U' F U R U R' U' B U B' U' R' U' R U'",
+        moves: "y2 U2 U' L' U L U F U' F' y2 U R U' R' U' F' U F",
+        narration: [
+          { at: 0, text: 'The green–orange edge is in the wrong slot: it sits at the back-right, between blue and orange. No need to pop it out, because the edge that belongs there, blue–orange, is on top at the front (blue facing you). Insert blue–orange and it will kick green–orange out. Its side colour is blue, so turn the cube (y2) to face blue.' },
+          { at: 1, text: 'Blue faces you and the edge is at the back, blue facing the back. U2 brings it round above the blue centre.' },
+          { at: 2, text: 'Orange on top, and orange is the left centre: left algorithm. Watch the green–orange edge in that slot.' },
+          { at: 10, text: 'Blue–orange is home, and green–orange has been kicked out to the top, at the back with green facing the back. Its side colour is green: turn the cube back (y2) to face green.' },
+          { at: 11, text: 'It is already a T: green above green, orange on top. Orange is the right centre: right algorithm.' },
+          { at: 19, text: 'Both home. Inserting an edge always pushes out whatever was in that slot.' }
+        ],
+        checkpoints: [
+          { at: 2, kind: 'alg', answerAlg: 'mid-left', prompt: 'Blue in front, the T is made, orange on top, and orange is the left centre. Which algorithm?', options: ['Middle edge: right', 'Middle edge: left'], answer: 1, explain: 'The top colour matches the left centre, so it goes left.' },
+          { at: 10, kind: 'next', prompt: 'Blue–orange is home and green–orange was kicked out to the top. What next?', options: ['y2', "U R U' R' U' F' U F", 'U2'], answer: 0, explain: 'Its side colour is green, so turn the cube to face green first.' }
+        ]
+      },
+      {
+        id: 'middle-no-edge', title: 'No usable edge on top',
+        summary: 'Every top edge has yellow: find the stuck middle edge, bring it to the front-right, pop it out.',
+        caseIds: ['edge-stuck', 'edge-right'],
+        setup: "B' U' B U L U L' U B' U' B U L U L' U'",
+        moves: "y2 U R U' R' U' F' U F U2 U R U' R' U' F' U F",
+        narration: [
+          { at: 0, text: 'Every top edge has a yellow sticker, so none of them goes in the middle. But the middle layer is not finished, so look around it: at the back-left, the blue–red edge is in its own slot but flipped (blue on the red side). Turn the cube (y2) so that slot is at the front-right.' },
+          { at: 1, text: 'Stuck slot at the front-right. Do the right algorithm once, whatever edge is on top: it swaps the stuck edge out to the top.' },
+          { at: 9, text: 'Out: blue–red is on top at the back, blue facing the back. U2 brings it round above the blue centre.' },
+          { at: 10, text: 'Red on top, and red is the right centre: right algorithm.' },
+          { at: 18, text: 'Fixed. No usable edge on top always means a stuck middle edge: find it, hold it at the front-right, pop it out.' }
+        ],
+        checkpoints: [
+          { at: 0, kind: 'next', prompt: 'No top edge is free of yellow, and the blue–red edge at the back-left is flipped. What first?', options: ['y2', "U R U' R' U' F' U F", 'U'], answer: 0, explain: 'Bring the stuck slot to the front-right first (y2), then do the right algorithm.' },
+          { at: 9, kind: 'next', prompt: 'It popped out on top at the back, blue facing the back. Which turn lines it up with the blue centre?', options: ['U', "U'", 'U2'], answer: 2, explain: 'A half turn brings the back of the top layer to the front.' }
+        ]
+      },
+      {
+        id: 'middle-yellow-trap', title: 'The yellow-edge trap',
+        summary: 'A T with yellow on top is not a middle edge: yellow matches neither side centre.',
+        caseIds: ['edge-yellow', 'edge-left'],
+        setup: "U F R U R' F' U' L' U' L U'",
+        moves: "U2 U' L' U L U F U' F'",
+        narration: [
+          { at: 0, text: 'Careful: the top-front edge shows green above the green centre, which looks like an upside-down T. But its top sticker is YELLOW, and yellow is neither the left nor the right centre: that edge belongs to the top layer, so skip it. The only top edge with no yellow is green–red, at the back. U2 brings it round.' },
+          { at: 1, text: 'Now a real T: green above green, red on top. Red is the left centre: left algorithm.' },
+          { at: 9, text: 'In. Before you start an algorithm, check both stickers of the edge: an edge with yellow never goes in the middle layer.' }
+        ],
+        checkpoints: [
+          { at: 0, kind: 'next', prompt: 'The top-front edge shows green above the green centre, but its top sticker is yellow. What next?', options: ["U R U' R' U' F' U F", 'U2', "U' L' U L U F U' F'"], answer: 1, explain: 'Skip the yellow edge. Bring the green–red edge (no yellow) round from the back instead.' },
+          { at: 1, kind: 'alg', answerAlg: 'mid-left', prompt: 'Green in front, a real T this time, red on top, and red is the left centre. Which algorithm?', options: ['Middle edge: right', 'Middle edge: left'], answer: 1, explain: 'The top colour matches the left centre, so it goes left.' }
         ]
       }
     ],

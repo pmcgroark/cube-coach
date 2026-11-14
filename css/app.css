@@ -190,7 +190,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: clip;
-  padding-bottom: var(--bottomnav-h);
+  padding-bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px));
 }
 
 html.has-modal, html.has-modal body { overflow: hidden; }
@@ -280,6 +280,9 @@ pre { font-family: var(--font-mono); font-size: var(--text-sm); overflow: auto; 
   max-width: var(--container);
   margin-inline: auto;
   padding-inline: var(--gutter);
+  /* iPhone in landscape: keep content clear of the notch and the rounded corners */
+  padding-left: max(var(--gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
 }
 .container-narrow { max-width: 760px; }
 
@@ -350,6 +353,7 @@ pre { font-family: var(--font-mono); font-size: var(--text-sm); overflow: auto; 
   position: sticky;
   top: 0;
   z-index: 50;
+  padding-top: env(safe-area-inset-top, 0px);
   background: var(--bg);
   background: var(--topbar-bg);
   -webkit-backdrop-filter: saturate(1.4) blur(12px);
@@ -423,7 +427,7 @@ pre { font-family: var(--font-mono); font-size: var(--text-sm); overflow: auto; 
     justify-content: space-around;
     gap: 0;
     height: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px));
-    padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+    padding: 6px max(4px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(4px, env(safe-area-inset-left, 0px));
     background: var(--surface);
     border-top: 1px solid var(--border);
     box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
@@ -1209,9 +1213,12 @@ textarea.input { min-height: 96px; resize: vertical; }
   border: 1px solid var(--border);
   background: radial-gradient(90% 80% at 50% 38%, var(--stage-glow) 0%, var(--stage-bg) 100%);
   overflow: hidden;
-  touch-action: none;
+  /* The page may scroll over the stage; the canvas sets touch-action itself when the cube can be
+     dragged (render3d.js), so a cube you can't turn never traps the scroll. */
+  touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .viewport-3d > canvas { display: block; width: 100% !important; height: 100% !important; outline: none; }
 .viewport-3d__overlay {
@@ -1347,6 +1354,87 @@ html.has-modal .toast-region { bottom: auto; top: calc(env(safe-area-inset-top, 
 .placeholder-note {
   display: flex; gap: var(--space-2); align-items: center;
   font-size: var(--text-sm); color: var(--text-3);
+}
+
+/* ================================================================ phones, touch & landscape
+ * Main target: iPhone 13/14/15 (390×844 CSS px), also 375×667 and 430×932, portrait and landscape,
+ * in Chrome or Safari on iOS and as a Home Screen app (standalone). */
+
+/* No double-tap zoom on controls (pinch zoom still works) and no grey flash on tap. */
+a, button, input, select, textarea, label, summary, [role="button"], [role="tab"], [role="radio"],
+.btn, .chip, .tile, .tab, .quiz-option, .toggle, .segmented > * {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (pointer: coarse) {
+  /* Tap targets at least 44 px (Apple's guideline) */
+  .btn { --btn-h: 46px; min-width: 44px; }
+  .btn-sm { --btn-h: 44px; }
+  .btn-lg { --btn-h: 52px; }
+  .chip { min-height: 44px; padding-inline: 14px; }
+  .tab { min-height: 44px; }
+  .segmented > button, .segmented > label { min-height: 44px; }
+  .segmented { padding: 2px; }
+  .input, .select { min-height: 44px; }
+  .toggle { min-height: 44px; }
+  .brand { min-height: 44px; min-width: 44px; }
+  .nav__link { min-height: 44px; }
+  summary { min-height: 44px; padding-block: 10px; }
+  .notice__close, .toast__close { width: 44px; height: 44px; }
+  .toast__action { min-height: 44px; padding-inline: 12px; }
+  .range, input[type="range"] { height: 44px; }
+  .check { min-height: 44px; }
+  /* the shared move pad (CC.MovePad) */
+  button.cc-pad-btn { min-height: 44px; }
+
+  /* 16 px or more in text fields, or iOS zooms the page when you tap into one */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="file"]):not([type="color"]):not([type="image"]),
+  select, textarea {
+    font-size: max(16px, 1em) !important;
+  }
+}
+
+/* Touch screens keep :hover after a tap: don't leave cards lifted. */
+@media (hover: none) {
+  .card-interactive:hover, .tile:hover { transform: none; box-shadow: var(--shadow-1); border-color: var(--border); }
+  .tile:hover .tile__arrow { transform: none; color: var(--text-3); }
+  .card-interactive:active, .tile:active { border-color: var(--accent-soft-2); background: var(--surface-2); }
+}
+
+/* Short screens = a phone on its side: a slimmer top bar and cubes that fit the height. */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root { --topbar-h: 48px; }
+  .screen-root { padding-top: var(--space-3); }
+  .viewport-3d {
+    min-height: 200px;
+    max-height: calc(100vh - var(--topbar-h) - 24px);
+    max-height: calc(100dvh - var(--topbar-h) - 24px);
+  }
+  .modal { max-height: calc(100dvh - 16px); }
+}
+
+/* Small phones on their side (e.g. 667×375): the tab bar moves back into the top bar, so the
+   screen keeps its height for the cube. */
+@media (max-width: 720px) and (orientation: landscape) and (max-height: 500px) {
+  :root { --bottomnav-h: 0px; }
+  .brand > span { display: none; }
+  .nav {
+    position: static;
+    height: auto;
+    margin-left: auto;
+    padding: 0;
+    gap: 2px;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    justify-content: flex-end;
+  }
+  .nav__link { flex: 0 1 auto; flex-direction: row; gap: 6px; padding: 6px 10px; font-size: 0.8rem; min-height: 44px; }
+  .nav__link.is-active, .nav__link[aria-current="page"] { background: var(--accent-soft); }
+  .nav__link.is-active .nav__icon, .nav__link[aria-current="page"] .nav__icon { background: transparent; }
+  .nav__icon { width: 20px; height: 20px; padding: 0; }
+  .nav__icon svg { width: 20px; height: 20px; }
 }
 
 /* ================================================================ reduced motion */
