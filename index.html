@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cube Coach</title>
+  <meta name="description" content="Learn to solve a Rubik's cube from scratch, then solve it on your own in under three minutes — with your real cube or an on-screen one.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f3f5f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c1014" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314181d'/%3E%3Crect x='4' y='4' width='7' height='7' rx='1.6' fill='%23ffd500'/%3E%3Crect x='12.5' y='4' width='7' height='7' rx='1.6' fill='%23c8102e'/%3E%3Crect x='21' y='4' width='7' height='7' rx='1.6' fill='%23009e60'/%3E%3Crect x='4' y='12.5' width='7' height='7' rx='1.6' fill='%230051ba'/%3E%3Crect x='12.5' y='12.5' width='7' height='7' rx='1.6' fill='%23ffd500'/%3E%3Crect x='21' y='12.5' width='7' height='7' rx='1.6' fill='%23ff6a13'/%3E%3Crect x='4' y='21' width='7' height='7' rx='1.6' fill='%23f5f5f0'/%3E%3Crect x='12.5' y='21' width='7' height='7' rx='1.6' fill='%23009e60'/%3E%3Crect x='21' y='21' width='7' height='7' rx='1.6' fill='%23ffd500'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#screen">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner container">
+      <a class="brand" href="#/home" aria-label="Cube Coach — home">
+        <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="7" fill="#14181d"/>
+          <rect x="4" y="4" width="7" height="7" rx="1.6" fill="#ffd500"/>
+          <rect x="12.5" y="4" width="7" height="7" rx="1.6" fill="#c8102e"/>
+          <rect x="21" y="4" width="7" height="7" rx="1.6" fill="#009e60"/>
+          <rect x="4" y="12.5" width="7" height="7" rx="1.6" fill="#0051ba"/>
+          <rect x="12.5" y="12.5" width="7" height="7" rx="1.6" fill="#ffd500"/>
+          <rect x="21" y="12.5" width="7" height="7" rx="1.6" fill="#ff6a13"/>
+          <rect x="4" y="21" width="7" height="7" rx="1.6" fill="#f5f5f0"/>
+          <rect x="12.5" y="21" width="7" height="7" rx="1.6" fill="#009e60"/>
+          <rect x="21" y="21" width="7" height="7" rx="1.6" fill="#ffd500"/>
+        </svg>
+        <span>Cube Coach</span>
+        <span class="brand__tag">Rubik's cube, step by step</span>
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a class="nav__link" href="#/home" data-nav="home"><span class="nav__icon" data-icon="home"></span><span>Home</span></a>
+        <a class="nav__link" href="#/learn" data-nav="learn"><span class="nav__icon" data-icon="learn"></span><span>Learn</span></a>
+        <a class="nav__link" href="#/drills" data-nav="practice"><span class="nav__icon" data-icon="practice"></span><span>Practice</span></a>
+        <a class="nav__link" href="#/stats" data-nav="stats"><span class="nav__icon" data-icon="stats"></span><span>Stats</span></a>
+        <a class="nav__link" href="#/settings" data-nav="settings"><span class="nav__icon" data-icon="settings"></span><span>Settings</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <div id="notices" class="notices"></div>
+
+  <main id="screen" class="screen-root container" tabindex="-1">
+    <div class="boot-loading"><span class="spinner"></span><span>Loading Cube Coach…</span></div>
+    <noscript><div class="card"><h1>Cube Coach needs JavaScript</h1><p>Please turn JavaScript on for this page, then reload.</p></div></noscript>
+  </main>
+
+  <div id="toasts" class="toast-region" aria-live="polite"></div>
+
+  <!-- three.js (3D cube). If it can't load (offline), the app still works with a flat cube view. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" referrerpolicy="no-referrer" onerror="window.CC_THREE_FAILED = true"></script>
+
+  <!-- Core modules (order matters: later modules look earlier ones up via window.CC) -->
+  <script src="js/cube.js"></script>
+  <script src="js/solver.js"></script>
+  <script src="js/scanner.js"></script>
+  <script src="js/render3d.js"></script>
+  <script src="js/lessons.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/coach.js"></script>
+  <!-- CC.Drills (the drill generator) is defined by js/screens/drills.js; there is no js/drills.js. -->
+  <script src="js/app.js"></script>
+
+  <!-- Screens register themselves with CC.App before boot -->
+  <script src="js/screens/home.js"></script>
+  <script src="js/screens/scan.js"></script>
+  <script src="js/screens/solve.js"></script>
+  <script src="js/screens/learn.js"></script>
+  <script src="js/screens/drills.js"></script>
+  <script src="js/screens/stats.js"></script>
+  <script src="js/screens/settings.js"></script>
+
+  <script>
+    (function () {
+      function start() {
+        if (window.CC && window.CC.App) { window.CC.App.boot(); return; }
+        var main = document.getElementById('screen');
+        if (main) main.innerHTML = '<div class="card"><h1>Cube Coach couldn’t start</h1>' +
+          '<p>The app files didn’t load. Start it with “Start Cube Coach.command” and open http://localhost:8765.</p></div>';
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+      else start();
+    })();
+  </script>
+</body>
+</html>

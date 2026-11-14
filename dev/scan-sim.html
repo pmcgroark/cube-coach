@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scanner Simulator</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --line: #2a2f3a; --text: #e8eaf0; --muted: #9aa3b2;
+    --good: #4ade80; --bad: #f87171; --warn: #fbbf24; --btn: #252a35; --btn-hover: #2f3543;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  header { padding: 14px 16px 6px; }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 4px 0 0; color: var(--muted); max-width: 900px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; padding: 10px 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .stage canvas#view { width: 100%; height: auto; display: block; background: #000; border-radius: 10px; }
+  .status { display: flex; gap: 10px; align-items: baseline; margin-top: 8px; flex-wrap: wrap; }
+  .status #stepLabel { font-weight: 600; }
+  .status #msg { color: var(--muted); }
+  .meter { height: 6px; background: var(--line); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  .meter > div { height: 100%; width: 0; background: var(--good); transition: width 60ms linear; }
+  .chips { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; }
+  .chip.done { color: var(--text); border-color: var(--good); }
+  .chip.now { border-color: var(--text); color: var(--text); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.5); display: inline-block; }
+  aside { display: flex; flex-direction: column; gap: 10px; }
+  fieldset { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); margin: 0; padding: 10px 12px; }
+  legend { color: var(--muted); padding: 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  label.row { display: grid; grid-template-columns: 80px 1fr 42px; gap: 8px; align-items: center; margin: 4px 0; }
+  label.row output { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  label.check { display: flex; gap: 8px; align-items: center; margin: 3px 0; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  button, select, input[type=number] { background: var(--btn); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font: inherit; }
+  button { cursor: pointer; }
+  button:hover { background: var(--btn-hover); }
+  input[type=number] { width: 90px; }
+  .raw canvas { width: 100%; height: auto; display: block; border-radius: 6px; border: 1px solid var(--line); }
+  .raw small { color: var(--muted); }
+  .results { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; padding: 6px 16px 24px; }
+  .results h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 8px; }
+  .net { display: grid; grid-template-columns: repeat(12, 20px); grid-template-rows: repeat(9, 20px); gap: 2px; }
+  .net div { border-radius: 3px; border: 1px solid rgba(0,0,0,0.5); }
+  .net div.wrong { outline: 3px solid var(--bad); outline-offset: -1px; }
+  .net div.unsure { box-shadow: inset 0 0 0 3px var(--warn); }
+  pre#report { white-space: pre-wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+  .ok { color: var(--good); } .bad { color: var(--bad); }
+  #tally { margin-top: 8px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Scanner simulator</h1>
+  <p>Runs <code>CC.Scanner.createController</code> against <code>createFakeCamera</code>: a synthetic, unmirrored 1280x720 webcam
+    showing a scrambled cube. With "Auto-turn" on, the fake learner turns to the next face after each capture.</p>
+</header>
+<main>
+  <section class="stage">
+    <canvas id="view" width="1280" height="720"></canvas>
+    <div class="status"><span id="stepLabel">Starting...</span><span id="msg"></span></div>
+    <div class="meter"><div id="stab"></div></div>
+    <div class="chips" id="chips"></div>
+  </section>
+  <aside>
+    <fieldset>
+      <legend>Cube</legend>
+      <div class="btns">
+        <input type="number" id="seed" value="1" min="0" aria-label="Scramble seed">
+        <button id="scramble">Scramble</button>
+        <button id="solved">Solved</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Lighting</legend>
+      <label class="row">Cast <input type="range" id="cast" min="-1.5" max="1.5" step="0.1" value="0"><output for="cast"></output></label>
+      <label class="row">Exposure <input type="range" id="exposure" min="0.5" max="1.5" step="0.05" value="1"><output for="exposure"></output></label>
+      <label class="row">Noise <input type="range" id="noise" min="0" max="3" step="0.1" value="1"><output for="noise"></output></label>
+      <label class="row">Glare <input type="range" id="glare" min="0" max="2" step="0.1" value="1"><output for="glare"></output></label>
+      <label class="row">Hand shake <input type="range" id="jitter" min="0" max="2" step="0.1" value="1"><output for="jitter"></output></label>
+    </fieldset>
+    <fieldset>
+      <legend>Scanner</legend>
+      <label class="check"><input type="checkbox" id="mirror" checked> Mirror preview (selfie view)</label>
+      <label class="check"><input type="checkbox" id="auto" checked> Auto-capture</label>
+      <label class="check"><input type="checkbox" id="autoturn" checked> Auto-turn to the next face</label>
+      <label class="check"><input type="checkbox" id="wrongway"> Turn the wrong way (ORANGE before RED)</label>
+      <label class="row" style="grid-template-columns: 80px 1fr">Cube colours
+        <select id="palette" aria-label="Cube colours">
+          <option value="std">Standard (scanner defaults)</option>
+          <option value="brand2">Another brand (redder orange, bluish white)</option>
+          <option value="brand3">Another brand (dark red, pale yellow)</option>
+        </select></label>
+      <div class="btns" style="margin-top:6px">
+        <button id="capture">Capture now</button>
+        <button id="wrong">Show a wrong face</button>
+        <button id="hide">Take the cube away</button>
+        <button id="reset">Restart scan</button>
+      </div>
+      <div class="btns" style="margin-top:6px">
+        <select id="redoStep" aria-label="Face to redo"></select>
+        <button id="redo">Redo face</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Show face</legend>
+      <div class="btns" id="faceBtns"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Batch</legend>
+      <div class="btns"><button id="batch">Run 10 random scans</button><button id="stopBatch">Stop</button></div>
+      <div id="tally">No batch yet.</div>
+    </fieldset>
+    <div class="raw"><small>Raw camera frame (unmirrored, what the sampler reads)</small><div id="rawHost"></div></div>
+  </aside>
+</main>
+<section class="results">
+  <div><h2>True cube</h2><div id="netTrue"></div></div>
+  <div><h2>Scanned</h2><div id="netScan"></div></div>
+  <div><h2>Report</h2><pre id="report">Scanning...</pre></div>
+</section>
+
+<script src="../js/cube.js"></script>
+<script src="../js/scanner.js"></script>
+<script>
+(function () {
+  'use strict';
+  var Cube = CC.Cube, Scanner = CC.Scanner;
+  var $ = function (id) { return document.getElementById(id); };
+  var state = null, fake = null, ctrl = null, turnTimer = null, startedAt = 0, batch = null, swapped = false, hidden = false;
+  var PALETTES = {
+    std: null,
+    brand2: { W: [200, 210, 215], Y: [215, 210, 60], G: [40, 170, 90], B: [30, 70, 160], R: [200, 45, 55], O: [235, 110, 50] },
+    brand3: { W: [235, 235, 225], Y: [240, 235, 110], G: [30, 140, 60], B: [20, 60, 150], R: [150, 20, 30], O: [230, 95, 30] }
+  };
+  // which face the fake learner shows for a scan step (turning the wrong way swaps RED and ORANGE)
+  function faceFor(step) { return $('wrongway').checked && (step === 1 || step === 3) ? 4 - step : step; }
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  function setCube(seed) {
+    state = seed == null ? Cube.solved() : Cube.applyAlg(Cube.solved(), Cube.scramble(25, seed));
+  }
+
+  function lightOpts() {
+    var o = { cast: +$('cast').value, exposure: +$('exposure').value, noise: +$('noise').value, glare: +$('glare').value, jitter: +$('jitter').value };
+    o.palette = PALETTES[$('palette').value] || Scanner.DEFAULT_RGB;
+    return o;
+  }
+
+  function renderNet(host, st, opts) {
+    opts = opts || {};
+    var grid = el('div', 'net');
+    var pos = { U: [3, 0], L: [0, 3], F: [3, 3], R: [6, 3], B: [9, 3], D: [3, 6] };
+    Cube.FACES.forEach(function (f, fi) {
+      for (var k = 0; k < 9; k++) {
+        var i = fi * 9 + k, d = el('div');
+        d.style.gridColumn = String(pos[f][0] + (k % 3) + 1);
+        d.style.gridRow = String(pos[f][1] + Math.floor(k / 3) + 1);
+        d.style.background = Cube.COLOR_HEX[st[i]] || '#444';
+        d.title = '#' + i + ' ' + f + ' ' + st[i] + (opts.confidence ? ' conf ' + opts.confidence[i].toFixed(2) : '');
+        if (opts.wrong && opts.wrong.indexOf(i) !== -1) d.classList.add('wrong');
+        if (opts.uncertain && opts.uncertain.indexOf(i) !== -1) d.classList.add('unsure');
+        grid.appendChild(d);
+      }
+    });
+    host.replaceChildren(grid);
+  }
+
+  function renderChips(info) {
+    var host = $('chips');
+    host.replaceChildren();
+    Scanner.SCAN_ORDER.forEach(function (e, i) {
+      var c = el('span', 'chip');
+      var dot = el('span', 'dot'); dot.style.background = Cube.COLOR_HEX[e.center];
+      c.appendChild(dot);
+      c.appendChild(document.createTextNode((i + 1) + ' ' + Cube.COLOR_NAME[e.center] + (info && info.captured[i] ? ' - done' : '')));
+      if (info && info.captured[i]) c.classList.add('done');
+      if (info && info.step === i) c.classList.add('now');
+      host.appendChild(c);
+    });
+  }
+
+  var lastChipKey = '';
+  function onFrame(info) {
+    $('stepLabel').textContent = info.complete ? 'Done' : 'Step ' + (info.step + 1) + '/6';
+    $('msg').textContent = info.message || '';
+    $('stab').style.width = Math.round(100 * (info.ready && info.armed ? info.stability : 0)) + '%';
+    var key = info.step + ':' + info.captured.join(',');
+    if (key !== lastChipKey) { lastChipKey = key; renderChips(info); }
+  }
+
+  function onCapture(step, letters) {
+    var next = ctrl.session.step;
+    if ($('autoturn').checked && next < 6) {
+      clearTimeout(turnTimer);
+      turnTimer = setTimeout(function () { if (fake) fake.showFace(faceFor(next)); }, 450);
+    }
+  }
+  // onCapture comes twice from one capture when the RED and ORANGE faces turned out to be the other
+  // way round (both steps get their colours again); count the calls made in the same tick
+  var callsThisTick = 0;
+  function onCaptureAll(step, letters) {
+    if (++callsThisTick === 2) swapped = true;
+    if (callsThisTick === 1) Promise.resolve().then(function () { callsThisTick = 0; });
+    onCapture(step, letters);
+  }
+
+  function onComplete(result) {
+    var wrong = [];
+    result.state.forEach(function (l, i) { if (l !== state[i]) wrong.push(i); });
+    renderNet($('netScan'), result.state, { wrong: wrong, uncertain: result.uncertain, confidence: result.confidence });
+    var secs = ((performance.now() - startedAt) / 1000).toFixed(1);
+    var lines = [];
+    lines.push(wrong.length ? 'MISMATCH: ' + wrong.length + ' sticker(s) differ from the true cube: ' + wrong.join(', ') : 'EXACT MATCH with the true cube');
+    lines.push('valid cube: ' + (result.validation.ok ? 'yes' : 'no - ' + result.validation.errors.map(function (e) { return e.type; }).join(', ')));
+    lines.push('repaired: ' + result.repaired + '   uncertain: [' + result.uncertain.join(', ') + ']');
+    if (result.suspectSteps && result.suspectSteps.length) lines.push('suspect steps: ' + result.suspectSteps.join(', '));
+    lines.push('RED/ORANGE faces came the other way round: ' + (swapped || result.swappedRedOrange ? 'yes (sorted out automatically)' : 'no'));
+    result.warnings.forEach(function (w) { lines.push('warning: ' + w); });
+    lines.push('white balance: ' + result.lighting.whiteBalance.map(function (v) { return v.toFixed(2); }).join(' / '));
+    lines.push('face exposure: ' + result.lighting.faceGain.map(function (v) { return v.toFixed(2); }).join(' / '));
+    lines.push('scan took ' + secs + ' s');
+    $('report').textContent = lines.join('\n');
+    $('report').className = wrong.length ? 'bad' : 'ok';
+    if (batch) {
+      batch.done++;
+      if (!wrong.length) batch.exact++;
+      batch.seconds += +secs;
+      showTally();
+      if (batch.done < batch.total) setTimeout(function () { if (batch) { setCube(Math.floor(Math.random() * 1e6)); $('seed').value = ''; restart(); } }, 900);
+      else batch.running = false;
+    }
+  }
+
+  function showTally() {
+    if (!batch) return;
+    $('tally').textContent = 'Batch: ' + batch.exact + '/' + batch.done + ' exact' + (batch.done < batch.total ? ' (running ' + (batch.done + 1) + ' of ' + batch.total + ')' : ' - finished') +
+      (batch.done ? ', average ' + (batch.seconds / batch.done).toFixed(1) + ' s per scan' : '');
+  }
+
+  function onError(err) {
+    $('report').textContent = 'Camera error [' + err.code + ']: ' + err.message;
+    $('report').className = 'bad';
+  }
+
+  function restart() {
+    clearTimeout(turnTimer);
+    if (ctrl) ctrl.stop();
+    if (fake) fake.destroy();
+    swapped = false; hidden = false; $('hide').textContent = 'Take the cube away';
+    fake = Scanner.createFakeCamera(state, Object.assign({ face: 0, seed: 7 }, lightOpts()));
+    $('rawHost').replaceChildren(fake.canvas);
+    ctrl = Scanner.createController({
+      canvas: $('view'), mirror: $('mirror').checked, autoCapture: $('auto').checked,
+      onFrame: onFrame, onCapture: onCaptureAll, onComplete: onComplete, onError: onError
+    });
+    ctrl.useStream(fake.stream).catch(function () { /* reported via onError */ });
+    startedAt = performance.now();
+    renderNet($('netTrue'), state);
+    $('netScan').replaceChildren();
+    $('report').textContent = 'Scanning...';
+    $('report').className = '';
+    renderChips(null);
+  }
+
+  // controls
+  Scanner.SCAN_ORDER.forEach(function (e, i) {
+    var label = (i + 1) + ' ' + Cube.COLOR_NAME[e.center];
+    var b = el('button', null, label);
+    b.addEventListener('click', function () { fake.showFace(i); });
+    $('faceBtns').appendChild(b);
+    var o = el('option', null, label); o.value = String(i);
+    $('redoStep').appendChild(o);
+  });
+  ['cast', 'exposure', 'noise', 'glare', 'jitter'].forEach(function (id) {
+    var input = $(id), out = input.parentNode.querySelector('output');
+    var show = function () { out.textContent = (+input.value).toFixed(2).replace(/\.?0+$/, '') || '0'; };
+    show();
+    input.addEventListener('input', function () { show(); if (fake) fake.set(lightOpts()); });
+  });
+  $('mirror').addEventListener('change', function () { ctrl.setMirror($('mirror').checked); });
+  $('auto').addEventListener('change', function () { ctrl.setAutoCapture($('auto').checked); });
+  $('capture').addEventListener('click', function () { ctrl.captureNow(); });
+  $('wrong').addEventListener('click', function () { var s = ctrl.session.step; fake.showFace(((s < 6 ? s : 0) + 2) % 6); });
+  $('hide').addEventListener('click', function () {
+    hidden = !hidden;
+    fake.hideCube(hidden);
+    $('hide').textContent = hidden ? 'Bring the cube back' : 'Take the cube away';
+  });
+  $('palette').addEventListener('change', function () { if (fake) fake.set(lightOpts()); });
+  $('reset').addEventListener('click', restart);
+  $('redo').addEventListener('click', function () {
+    var i = +$('redoStep').value;
+    ctrl.redo(i);
+    if ($('autoturn').checked) fake.showFace(faceFor(i));
+  });
+  $('scramble').addEventListener('click', function () {
+    var v = $('seed').value === '' ? Math.floor(Math.random() * 1e6) : +$('seed').value;
+    $('seed').value = String(v + 1);
+    setCube(v);
+    restart();
+  });
+  $('solved').addEventListener('click', function () { setCube(null); restart(); });
+  $('batch').addEventListener('click', function () {
+    batch = { total: 10, done: 0, exact: 0, seconds: 0, running: true };
+    $('autoturn').checked = true; $('auto').checked = true;
+    showTally();
+    setCube(Math.floor(Math.random() * 1e6));
+    restart();
+  });
+  $('stopBatch').addEventListener('click', function () { batch = null; $('tally').textContent = 'Batch stopped.'; });
+
+  setCube(1);
+  $('seed').value = '2';
+  restart();
+})();
+</script>
+</body>
+</html>

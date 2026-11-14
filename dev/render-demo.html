@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Render Demo</title>
+<style>
+  :root {
+    --bg: #f4f4f1; --panel: #ffffff; --ink: #1c1d21; --muted: #62646c; --line: rgba(0,0,0,.12);
+    --cc-accent: #ff2bd6; --cc-net-body: #16171b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #121317; --panel: #1b1d22; --ink: #ecedf0; --muted: #9a9ca5; --line: rgba(255,255,255,.12); --cc-net-body: #050506; }
+  }
+  :root[data-theme="dark"] { --bg: #121317; --panel: #1b1d22; --ink: #ecedf0; --muted: #9a9ca5; --line: rgba(255,255,255,.12); --cc-net-body: #050506; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 14px 16px 4px; }
+  h1 { font-size: 18px; margin: 0; }
+  header p { margin: 2px 0 0; color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; padding: 12px 16px 32px; }
+  @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-width: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
+  #view { height: 440px; border-radius: 10px; background: radial-gradient(ellipse at 50% 40%, rgba(128,128,128,.14), transparent 70%); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  .moves { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 4px; }
+  button { font: inherit; color: inherit; background: rgba(128,128,128,.12); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; cursor: pointer; }
+  button:hover { background: rgba(128,128,128,.22); }
+  .moves button { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 0; }
+  .moves button.rot { font-style: italic; }
+  input[type=text] { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line); background: transparent; color: inherit; min-width: 0; flex: 1 1 220px; }
+  select { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; }
+  label { display: inline-flex; gap: 6px; align-items: center; }
+  .readout { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; background: rgba(128,128,128,.08); border-radius: 8px; padding: 8px; }
+  .ok { color: #1f9d55; font-weight: 700; } .no { color: #c0392b; font-weight: 700; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+  .legend b { color: var(--ink); }
+  #fallbackHost { height: 300px; }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>render3d.js — manual test page</h1>
+  <p>Drag empty space to orbit, double-click to reset the camera. With “Turnable” on, drag a sticker to turn its layer. Keyboard moves work when no text box has focus.</p>
+</header>
+<main>
+  <div>
+    <section>
+      <div id="view"></div>
+      <div class="row">
+        <button id="reset">Reset (solved)</button>
+        <button id="learnFrame">Yellow up, green front</button>
+        <button id="scramble">Scramble</button>
+        <button id="cancel">Cancel → end state</button>
+        <button id="camReset">Reset camera</button>
+      </div>
+      <div class="row">
+        <label>Speed <input id="speed" type="range" min="0.25" max="4" step="0.25" value="1"> <span id="speedOut">1×</span></label>
+        <label><input id="turnable" type="checkbox" checked> Turnable (drag stickers)</label>
+        <label><input id="hl" type="checkbox"> Highlight white–green edge + white–green–red corner</label>
+      </div>
+    </section>
+    <section style="margin-top:16px">
+      <h2>Live readout</h2>
+      <div class="readout" id="readout"></div>
+    </section>
+  </div>
+  <div>
+    <section>
+      <h2>Moves</h2>
+      <div class="row">
+        <label><input id="arrowMode" type="checkbox"> Arrow mode: buttons preview the arrow instead of turning</label>
+        <button id="clearArrow">Clear arrow</button>
+        <button id="playArrow">Play the arrowed move</button>
+      </div>
+      <div class="moves" id="moves"></div>
+      <div class="row">
+        <input id="alg" type="text" value="R U R' U'" aria-label="Algorithm">
+        <button id="play">Play</button>
+        <button id="playInv">Play inverse</button>
+        <button id="stepArrow">Arrow → next move</button>
+      </div>
+      <div class="muted" id="algMsg"></div>
+    </section>
+    <section style="margin-top:16px">
+      <h2>Keyboard</h2>
+      <div class="row">
+        <label>Scheme <select id="scheme"><option value="simple">simple</option><option value="cstimer">cstimer</option></select></label>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+    <section style="margin-top:16px">
+      <h2>MovePad</h2>
+      <div class="row"><label><input id="padSlices" type="checkbox"> slices row</label><label><input id="padCompact" type="checkbox"> compact</label></div>
+      <div id="pad"></div>
+    </section>
+    <section style="margin-top:16px">
+      <h2>Net2D (click a sticker to highlight it in 3D)</h2>
+      <div class="row">
+        <label>Size <select id="netSize"><option>sm</option><option selected>md</option><option>lg</option></select></label>
+        <label><input id="netLabels" type="checkbox" checked> labels</label>
+      </div>
+      <div id="net"></div>
+    </section>
+    <section style="margin-top:16px">
+      <h2>No-WebGL fallback</h2>
+      <div class="row"><button id="mkFallback">Create fallback view</button><button id="fbPlay">Play “R U R' U'” on it</button><button id="fbArrow">Arrow F2</button><button id="fbKill">Dispose</button></div>
+      <div id="fallbackHost"></div>
+    </section>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../js/cube.js"></script>
+<script src="../js/render3d.js"></script>
+<script>
+(function () {
+  'use strict';
+  var Cube = CC.Cube, $ = function (id) { return document.getElementById(id); };
+  var v = CC.View3D.create($('view'), { interactive: true, turnable: true });
+  window.v = v; // for console poking
+  var lastUser = '—', arrowTok = null, arrowAlg = null, arrowIdx = 0;
+
+  v.onUserMove = function (tok) { lastUser = tok; refresh(); };
+
+  // ---- move buttons
+  var bases = ['U', 'D', 'R', 'L', 'F', 'B', 'M', 'E', 'S', 'u', 'd', 'r', 'l', 'f', 'b', 'x', 'y', 'z'];
+  bases.forEach(function (b) {
+    ['', "'", '2'].forEach(function (suf) {
+      var tok = b + suf, btn = document.createElement('button');
+      btn.textContent = tok;
+      btn.title = Cube.moveInfo(tok).text;
+      if (/^[xyz]/.test(b)) btn.className = 'rot';
+      btn.onclick = function () {
+        if ($('arrowMode').checked) { arrowTok = tok; v.showArrow(tok); refresh(); }
+        else v.userMove(tok);
+      };
+      $('moves').appendChild(btn);
+    });
+  });
+  $('clearArrow').onclick = function () { arrowTok = null; arrowAlg = null; v.showArrow(null); refresh(); };
+  $('playArrow').onclick = function () {
+    if (!arrowTok) return;
+    var t = arrowTok;
+    v.showArrow(null);
+    v.play([t]).then(function () {
+      if (arrowAlg) { arrowIdx++; arrowTok = arrowAlg[arrowIdx] || null; v.showArrow(arrowTok); if (!arrowTok) arrowAlg = null; }
+      else v.showArrow(t);
+      refresh();
+    });
+  };
+
+  // ---- algorithm box
+  function parse() {
+    try { var a = Cube.parseAlg($('alg').value); $('algMsg').textContent = ''; return a; }
+    catch (e) { $('algMsg').textContent = e.message; return null; }
+  }
+  $('play').onclick = function () {
+    var a = parse(); if (!a) return;
+    $('algMsg').textContent = 'Playing…';
+    v.play(a, { speed: +$('speed').value, onMove: function (i, t) { $('algMsg').textContent = 'Move ' + (i + 1) + '/' + a.length + ': ' + t + ' — ' + Cube.moveInfo(t).text; refresh(); } })
+      .then(function () { $('algMsg').textContent = 'Done.'; refresh(); });
+  };
+  $('playInv').onclick = function () { var a = parse(); if (a) v.play(Cube.invertAlg(a)).then(refresh); };
+  $('stepArrow').onclick = function () {
+    var a = parse(); if (!a || !a.length) return;
+    arrowAlg = a; arrowIdx = 0; arrowTok = a[0]; v.showArrow(arrowTok); refresh();
+  };
+
+  // ---- state controls
+  $('reset').onclick = function () { v.setState(Cube.solved()); refresh(); };
+  $('learnFrame').onclick = function () { v.setState(Cube.applyAlg(Cube.solved(), 'z2')); refresh(); };
+  $('scramble').onclick = function () { v.play(Cube.scramble(20), { speed: 4 }).then(refresh); };
+  $('cancel').onclick = function () { v.cancel(); refresh(); };
+  $('camReset').onclick = function () { v.resetCamera(); };
+  $('speed').oninput = function () { v.setSpeed(+this.value); $('speedOut').textContent = this.value + '×'; };
+  $('turnable').onchange = function () { v.setTurnable(this.checked); this.blur(); };
+  $('hl').onchange = function () {
+    if (this.checked) {
+      var s = v.getState(), e = Cube.findEdge(s, 'W', 'G'), c = Cube.findCorner(s, 'W', 'G', 'R');
+      v.highlight(e.stickers.concat(c.stickers));
+    } else v.highlight(null);
+    this.blur();
+  };
+  $('arrowMode').onchange = function () { this.blur(); };
+
+  // ---- keyboard
+  function showLegend() {
+    $('legend').innerHTML = CC.Keys.legend($('scheme').value).map(function (e) { return '<span><b>' + e.key + '</b> ' + e.token + '</span>'; }).join('');
+  }
+  $('scheme').onchange = function () { showLegend(); this.blur(); };
+  showLegend();
+  document.addEventListener('keydown', function (e) {
+    var tok = CC.Keys.toMove(e, $('scheme').value);
+    if (!tok) return;
+    e.preventDefault();
+    v.userMove(tok);
+  });
+
+  // ---- MovePad
+  var pad = null;
+  function mkPad() {
+    if (pad) pad.destroy();
+    pad = CC.MovePad.render($('pad'), { onMove: function (t) { v.userMove(t); }, slices: $('padSlices').checked, compact: $('padCompact').checked });
+  }
+  $('padSlices').onchange = mkPad; $('padCompact').onchange = mkPad;
+  mkPad();
+
+  // ---- Net2D
+  var picked = [];
+  var net = CC.Net2D.render($('net'), v.getState(), {
+    size: 'md', labels: true,
+    onSticker: function (i) {
+      var at = picked.indexOf(i);
+      if (at === -1) picked.push(i); else picked.splice(at, 1);
+      v.highlight(picked.length ? picked : null);
+      refresh();
+    }
+  });
+  $('netSize').onchange = function () { net.update(null, { size: this.value }); };
+  $('netLabels').onchange = function () { net.update(null, { labels: this.checked }); };
+
+  // ---- fallback
+  var fb = null;
+  $('mkFallback').onclick = function () { if (!fb) fb = CC.View3D.create($('fallbackHost'), { fallback: true }); };
+  $('fbPlay').onclick = function () { if (fb) fb.play("R U R' U'"); };
+  $('fbArrow').onclick = function () { if (fb) fb.showArrow('F2'); };
+  $('fbKill').onclick = function () { if (fb) { fb.dispose(); fb = null; } };
+
+  // ---- readout
+  function refresh() {
+    var s = v.getState();
+    var ok = Cube.isSolved(s);
+    $('readout').innerHTML =
+      'state: ' + Cube.toString(s) + '<br>' +
+      'isSolved: <span class="' + (ok ? 'ok' : 'no') + '">' + ok + '</span> · valid: ' + Cube.validate(s).ok + '<br>' +
+      'busy: ' + v.isBusy() + ' · final state solved: ' + Cube.isSolved(v.finalState()) + '<br>' +
+      'last user move: ' + lastUser + ' · arrow: ' + (arrowTok ? arrowTok + ' — ' + Cube.moveInfo(arrowTok).text : '—') + '<br>' +
+      'renderer: ' + (v.fallback ? '2D fallback (no WebGL)' : 'WebGL');
+    net.update(s);
+  }
+  setInterval(refresh, 250);
+  refresh();
+})();
+</script>
+</body>
+</html>
