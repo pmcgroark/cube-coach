@@ -332,7 +332,7 @@ test('leftright: the top colour says which way; that algorithm inserts it and th
     assert.deepStrictEqual(it.targetState, end);
     counts[side] = (counts[side] || 0) + 1;
     assert.ok(Gym.check(it, side).correct && !Gym.check(it, side === 'right' ? 'left' : 'right').correct);
-    assert.ok(it.explain.includes(Cube.COLOR_NAME[b]) && it.explain.includes(side));
+    assert.ok(it.explain.toLowerCase().includes(Cube.COLOR_NAME[b] + ' on top matches the ' + side + ' centre') && it.explain.includes(side), it.explain);
   });
   assert.ok(counts.left > 150 && counts.right > 150, JSON.stringify(counts));
 });
@@ -570,7 +570,7 @@ test('whereami: the cube really is k moves in; every count option is a different
       assert.ok(it.options.some((o) => o.id === A[k]));
     }
     const lc = (t) => t.charAt(0).toLowerCase() + t.slice(1);
-    assert.ok(it.explain.includes(lc(Gym.whereText(it.alg, k))) && it.explain.includes('You have done ' + k) && it.explain.endsWith('Next is ' + A[k] + '.'));
+    assert.ok(it.explain.includes(lc(Gym.whereText(it.alg, k))) && it.explain.includes('You have done ' + k) && it.explain.endsWith('Next is ' + A[k] + ' (' + Cube.moveInfo(A[k]).text + ').'));
     types[it.question] = (types[it.question] || 0) + 1;
     assert.ok(Gym.check(it, it.answer).correct);
     it.options.filter((o) => o.id !== it.answer).forEach((o) => assert.ok(!Gym.check(it, o.id).correct));
@@ -688,15 +688,43 @@ test('record / isStrong / suggest', () => {
   Gym.record(data, 'spot', true, { coach: false }, now);
   assert.ok(!data.drills['gym-spot']);
   assert.strictEqual(Gym.record(data, 'nope', true), null);
-  // suggestion: the weakest of the four problems, first drill there that is not strong
+  // suggestion: the weakest of the four problems; ties go to the learner's own order (remembering first)
   const fresh = globalThis.CC.Store.defaults();
-  assert.deepStrictEqual(Gym.suggest(fresh).drillId, 'spot');
+  assert.deepStrictEqual(Gym.suggest(fresh).drillId, 'halves');
+  assert.deepStrictEqual(Gym.PRIORITY, [2, 1, 3, 4]);
   ['spot', 'lineup', 'leftright', 'decide'].forEach((id) => { for (let i = 0; i < 10; i++) Gym.record(fresh, id, true, {}, now); });
   const s2 = Gym.suggest(fresh);
   assert.strictEqual(s2.group, 2); assert.strictEqual(s2.drillId, 'halves');
   Gym.DRILLS.forEach((d) => { if (d.kind !== 'route') for (let i = 0; i < 10; i++) Gym.record(fresh, d.id, true, {}, now); });
   assert.strictEqual(Gym.suggest(fresh).group, 5);
   assert.ok(Gym.suggest(null).drillId);
+});
+
+test('recordRound keeps the best perfect round; suggest picks the weakest drill of the weakest problem', () => {
+  const data = globalThis.CC.Store.defaults();
+  const now = new Date('2026-11-15T10:00:00Z');
+  assert.deepStrictEqual(Gym.recordRound(data, 'leftright', { right: 10, total: 10, ms: 9000 }), { best: false }, 'nothing recorded yet');
+  for (let i = 0; i < 10; i++) Gym.record(data, 'leftright', true, {}, now);
+  assert.strictEqual(Gym.recordRound(data, 'leftright', { right: 9, total: 10, ms: 5000 }).best, false, 'an imperfect round is never a best');
+  assert.strictEqual(data.gym.leftright.bestRoundMs, undefined);
+  assert.strictEqual(Gym.recordRound(data, 'leftright', { right: 10, total: 10, ms: 12000.4 }).best, true);
+  assert.strictEqual(data.gym.leftright.bestRoundMs, 12000);
+  assert.strictEqual(Gym.recordRound(data, 'leftright', { right: 10, total: 10, ms: 13000 }).best, false);
+  const r = Gym.recordRound(data, 'leftright', { right: 10, total: 10, ms: 11000 });
+  assert.ok(r.best && r.previous === 12000); assert.strictEqual(data.gym.leftright.bestRoundMs, 11000);
+  assert.strictEqual(data.gym.leftright.bestMs, null, 'the best single answer is a different record');
+  assert.strictEqual(Gym.recordRound(data, 'nope', { right: 1, total: 1, ms: 1 }).best, false);
+  assert.strictEqual(Gym.recordRound(null, 'leftright', { right: 1, total: 1, ms: 1 }).best, false);
+  // suggest: inside the weakest group, the weakest drill that is not strong (ties: the earlier one)
+  const d2 = globalThis.CC.Store.defaults();
+  const rec = (id, rights, n) => { for (let i = 0; i < n; i++) Gym.record(d2, id, i < rights, {}, now); };
+  ['spot', 'lineup', 'leftright', 'decide'].forEach((id) => rec(id, 10, 10));            // group 1 strong
+  ['stuck-spot', 'stuck-fix', 'landmark', 'whereami', 'slip'].forEach((id) => rec(id, 9, 10));
+  rec('halves', 7, 10); rec('nextmove', 3, 10); rec('mirror', 6, 10); rec('recall', 7, 10);   // group 2 weakest
+  assert.deepStrictEqual([Gym.suggest(d2).group, Gym.suggest(d2).drillId], [2, 'nextmove'], 'the weakest drill, not just the first');
+  rec('nextmove', 10, 10);
+  assert.strictEqual(Gym.suggest(d2).drillId, 'mirror');
+  assert.strictEqual(Gym.suggest(d2, { hasCube: false }).drillId, 'mirror');
 });
 
 // ------------------------------------------------------------ feedback on wrong answers (review round)
@@ -718,7 +746,7 @@ function checkMoveWhy(a, k, o) {
     assert.ok(!ALG[a].includes(o.id) && ALG[a === 'right' ? 'left' : 'right'].includes(o.id), 'a move from the other algorithm');
     if (o.id === Gym.mirrorMove(ans)) assert.match(o.why, /mirror/);
   } else if (o.id === Cube.invertMove(ans)) {
-    assert.ok(o.why.startsWith(o.id + ' turns the other way') && o.why.includes(Cube.moveInfo(ans).text), o.why);
+    assert.ok(o.why === o.id + ' turns the other way: move ' + (k + 1) + ' is ' + ans + '.', o.why);
   } else {
     const where = (pos.length > 1 ? 'moves ' + pos.slice(0, -1).join(', ') + ' and ' + pos[pos.length - 1] : 'move ' + pos[0]);
     if (pos.every((p) => p > k + 1)) assert.ok(o.why.startsWith(o.id + ' comes later (' + where + '), not move ' + (k + 1) + '.'), o.why);

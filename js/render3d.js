@@ -205,6 +205,78 @@
     return spec;
   }
 
+  // ================================================================== touch: cube or background? (pure)
+  // On a phone the cube's canvas fills a big part of the screen. A finger that lands ON the cube turns
+  // or orbits it; a finger that lands on the empty background around it must still scroll the page.
+  // The canvas is `touch-action: pan-y` (vertical drags on the background scroll; sideways ones orbit)
+  // and a non-passive touchstart calls preventDefault only for touches inside the cube's outline on
+  // screen: the convex hull of its 8 projected corners, plus a finger's margin.
+  var CUBE_HALF = 1.5;                                // scene units: the cube's outer faces
+  var TOUCH_MARGIN = 12;                              // CSS px of slack round the outline for a fingertip
+  var FOV = 30;                                       // the camera's vertical field of view, degrees
+
+  // Where a scene point lands on a w×h canvas (CSS px) for the orbit camera { az, el, dist } looking
+  // at the origin with y up (the same projection as THREE.PerspectiveCamera + lookAt).
+  function projectPoint(p, cam, w, h, fovDeg) {
+    var eye = scale(viewDir(cam.az, cam.el), cam.dist);
+    var f = norm(scale(eye, -1));
+    var r = norm(cross(f, [0, 1, 0]));
+    var u = cross(r, f);
+    var v = sub(p, eye);
+    var depth = dot(v, f);
+    if (!(depth > 1e-6)) return null;                 // behind the camera
+    var t = Math.tan((fovDeg || FOV) * DEG / 2), aspect = w / h;
+    var nx = dot(v, r) / (depth * t * aspect), ny = dot(v, u) / (depth * t);
+    return [(nx + 1) / 2 * w, (1 - ny) / 2 * h];
+  }
+
+  // Convex hull (Andrew's monotone chain), anticlockwise in screen space (y down = clockwise on screen).
+  function convexHull(points) {
+    var pts = points.filter(Boolean).map(function (p) { return [p[0], p[1]]; })
+      .sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    if (pts.length < 3) return pts;
+    function turn(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+    var lower = [], upper = [], i;
+    for (i = 0; i < pts.length; i++) {
+      while (lower.length >= 2 && turn(lower[lower.length - 2], lower[lower.length - 1], pts[i]) <= 0) lower.pop();
+      lower.push(pts[i]);
+    }
+    for (i = pts.length - 1; i >= 0; i--) {
+      while (upper.length >= 2 && turn(upper[upper.length - 2], upper[upper.length - 1], pts[i]) <= 0) upper.pop();
+      upper.push(pts[i]);
+    }
+    upper.pop(); lower.pop();
+    return lower.concat(upper);
+  }
+
+  // Is (x, y) inside the convex polygon `hull`, or within `margin` px of its edge?
+  function inHull(hull, x, y, margin) {
+    var n = hull ? hull.length : 0;
+    if (n < 3) return false;
+    margin = margin || 0;
+    var inside = true, best = Infinity;
+    for (var i = 0; i < n; i++) {
+      var a = hull[i], b = hull[(i + 1) % n];
+      var ex = b[0] - a[0], ey = b[1] - a[1], el = Math.sqrt(ex * ex + ey * ey) || 1;
+      if ((ex * (y - a[1]) - ey * (x - a[0])) < 0) inside = false;   // outside this edge
+      var t = clamp(((x - a[0]) * ex + (y - a[1]) * ey) / (el * el), 0, 1);
+      var dx = x - (a[0] + t * ex), dy = y - (a[1] + t * ey);
+      best = Math.min(best, Math.sqrt(dx * dx + dy * dy));
+    }
+    return inside || best <= margin;
+  }
+
+  // The cube's outline on a w×h canvas, for the orbit camera `cam`.
+  function cubeOutline(cam, w, h, fovDeg) {
+    var pts = [], s = CUBE_HALF;
+    for (var i = 0; i < 8; i++) pts.push(projectPoint([i & 1 ? s : -s, i & 2 ? s : -s, i & 4 ? s : -s], cam, w, h, fovDeg));
+    return convexHull(pts);
+  }
+
+  // The canvas's CSS touch-action: a cube you can drag lets vertical swipes scroll the page (the
+  // touchstart handler claims the ones that start on the cube); a picture-only cube leaves touch alone.
+  function touchActionFor(interactive, turnable) { return interactive || turnable ? 'pan-y' : ''; }
+
   // ================================================================== move sequencer (pure)
   // Queues tokens, runs one timed animation at a time and commits each move to the state.
   // cfg: { state, speed, baseMs, begin(anim), progress(anim, k), end(anim), commit(token, state, job), user(token) }
@@ -667,12 +739,12 @@
     var cs = canvas.style;
     cs.display = 'block'; cs.width = '100%'; cs.height = '100%'; cs.outline = 'none';
     cs.userSelect = 'none'; cs.webkitUserSelect = 'none'; cs.webkitTapHighlightColor = 'transparent';
-    cs.touchAction = (interactive || turnable) ? 'none' : '';
+    cs.touchAction = touchActionFor(interactive, turnable);
     container.appendChild(canvas);
     api.el = canvas;
 
     var scene = new THREE.Scene();
-    var camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+    var camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 100);
     scene.add(camera);
     scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3d46, 0.95));
     var keyLight = new THREE.DirectionalLight(0xffffff, 0.75);
@@ -1026,6 +1098,15 @@
       return best ? dragToToken(pk.normal, best, pk.cubie) : null;
     }
 
+    // Is this point (client px) on the cube as drawn? Its outline on screen, plus a fingertip's margin.
+    function onCube(clientX, clientY) {
+      var rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height || !lastW || !lastH) return false;
+      var hull = cubeOutline(cam, lastW, lastH, camera.fov);
+      var x = (clientX - rect.left) * lastW / rect.width, y = (clientY - rect.top) * lastH / rect.height;
+      return inHull(hull, x, y, TOUCH_MARGIN) || !!(turnable && pick(clientX, clientY));
+    }
+
     var drag = null;
     function setCursor(c) { if (cs.cursor !== c) cs.cursor = c; }
     function idleCursor(e) {
@@ -1039,11 +1120,27 @@
       if (pk) drag = { id: e.pointerId, mode: 'turn', pick: pk, x0: e.clientX, y0: e.clientY };
       else if (interactive) {
         drag = { id: e.pointerId, mode: 'orbit', x0: e.clientX, y0: e.clientY, az0: cam.az, el0: cam.el };
+        // a finger on the background: a vertical swipe scrolls the page (the browser then cancels this
+        // pointer, and the view goes back to where it was); a sideways one orbits the cube
+        if (e.pointerType === 'touch' && !onCube(e.clientX, e.clientY)) drag.background = true;
         cam.tween = null;
         setCursor('grabbing');
       } else return;
       try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     }
+    // Touches that start on the cube belong to the cube (no page scroll, no zoom, no long-press menu);
+    // the rest are left to the browser (touch-action: pan-y). Must be non-passive to preventDefault.
+    var touchOwned = false;
+    function onTouchStart(e) {
+      if (disposed || !(interactive || turnable)) return;
+      var t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      if (e.touches && e.touches.length > 1) { if (touchOwned && e.cancelable) e.preventDefault(); return; }
+      touchOwned = onCube(t.clientX, t.clientY);
+      if (touchOwned && e.cancelable) e.preventDefault();
+    }
+    function onTouchMove(e) { if (touchOwned && e.cancelable) e.preventDefault(); }
+    function onTouchEnd(e) { if (!e.touches || !e.touches.length) touchOwned = false; }
     function onMove(e) {
       if (disposed) return;
       if (!drag) { if (e.pointerType === 'mouse') idleCursor(e); return; }
@@ -1063,6 +1160,11 @@
     function onUp(e) {
       if (!drag || (e && e.pointerId !== drag.id)) return;
       try { canvas.releasePointerCapture(drag.id); } catch (err) { /* ignore */ }
+      // the browser took a background swipe to scroll the page: undo the little orbit before it did
+      if (e && e.type === 'pointercancel' && drag.mode === 'orbit' && drag.background) {
+        cam.az = drag.az0; cam.el = drag.el0;
+        placeCamera();
+      }
       drag = null;
       idleCursor(e && e.pointerType === 'mouse' ? e : null);
       kick();
@@ -1075,6 +1177,11 @@
     canvas.addEventListener('pointercancel', onUp);
     canvas.addEventListener('pointerleave', onLeave);
     canvas.addEventListener('dblclick', onDbl);
+    var NOT_PASSIVE = { passive: false };
+    canvas.addEventListener('touchstart', onTouchStart, NOT_PASSIVE);
+    canvas.addEventListener('touchmove', onTouchMove, NOT_PASSIVE);
+    canvas.addEventListener('touchend', onTouchEnd);
+    canvas.addEventListener('touchcancel', onTouchEnd);
     setCursor(interactive ? 'grab' : '');
 
     // ---- public API
@@ -1087,7 +1194,7 @@
     api.isBusy = function () { return seq.busy(); };
     api.setSpeed = function (s) { seq.speed = +s || 1; };
     api.highlight = function (indices) { if (disposed) return; setHl(indices); kick(); };
-    api.setTurnable = function (on) { turnable = !!on; cs.touchAction = (interactive || turnable) ? 'none' : ''; };
+    api.setTurnable = function (on) { turnable = !!on; cs.touchAction = touchActionFor(interactive, turnable); };
     api.dispose = function () {
       if (disposed) return;
       disposed = true;
@@ -1100,6 +1207,10 @@
       canvas.removeEventListener('pointercancel', onUp);
       canvas.removeEventListener('pointerleave', onLeave);
       canvas.removeEventListener('dblclick', onDbl);
+      canvas.removeEventListener('touchstart', onTouchStart, NOT_PASSIVE);
+      canvas.removeEventListener('touchmove', onTouchMove, NOT_PASSIVE);
+      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('touchcancel', onTouchEnd);
       seq.reset();
       clearArrow();
       var geos = [bodyGeo, stickerGeo, ringGeo], mats = [bodyMat, ringMat, arrowMat, outlineMat];
@@ -1133,7 +1244,9 @@
     _internal: {
       dragToToken: dragToToken, inPlaneAxes: inPlaneAxes, turnInfo: turnInfo, arrowSpec: arrowSpec,
       createSequencer: createSequencer, ease: ease, viewDir: viewDir, netCell: netCell, padRows: padRows,
-      codeChar: codeChar, isTypingTarget: isTypingTarget, BASE_MS: BASE_MS
+      codeChar: codeChar, isTypingTarget: isTypingTarget, BASE_MS: BASE_MS,
+      projectPoint: projectPoint, convexHull: convexHull, inHull: inHull, cubeOutline: cubeOutline,
+      touchActionFor: touchActionFor, TOUCH_MARGIN: TOUCH_MARGIN, FOV: FOV, FIT_RADIUS: FIT_RADIUS
     }
   };
 

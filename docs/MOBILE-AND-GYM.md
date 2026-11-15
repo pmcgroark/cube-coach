@@ -142,3 +142,111 @@ group. Full middle-layer solves go through the solve screen, which already recor
 * Entry points: Home (a tile when the Middle Layer is the current/weakest stage), the Middle Layer
   lesson ("Go to the gym"), Practice › Stages (middle row), and the solve screen while on the middle
   stage ("Stuck? Practise in the Gym").
+
+## As built (Nov 2026)
+
+What was actually built, where it differs from or adds to the spec above. ARCHITECTURE.md has the
+full module contracts; the code (each file's header and exports) is the final word.
+
+### Part A — the iPhone version
+
+* **Hosting.** Live at `https://pmcgroark.github.io/cube-coach/` (`CC.App.HOSTED_URL`), served by
+  GitHub Pages from the `main` branch, root folder, with `.nojekyll`. three.js r128 is
+  `vendor/three.min.js`; nothing is fetched from a CDN.
+* **Service worker.** `CC.App.swDecision(location)` decides: `register` on https (or `?sw=1` on
+  localhost), `dev` on localhost / 127.0.0.1 / `*.localhost` (never cache; any old copy is removed, and a page that
+  came from it reloads once), `off` with `?sw=0`, `insecure` on plain http elsewhere, `unavailable` for
+  file://. The update toast reads "A new version is ready —" with a **Reload** button
+  (`CC.App.applyUpdate()` → `SKIP_WAITING` → reload). A Home Screen app also checks for a new version
+  when it comes back to the front (at most every 30 minutes), and the app asks for persistent storage.
+  State changes fire a `cc:sw` window event; `CC.App.offlineStatus()` asks the worker for
+  `{ ready, cached, total, version }`.
+* **Precache list and version are generated:** `node tests/platform.test.js --stamp` writes `PRECACHE`
+  (index.html, manifest, everything under css/, js/, vendor/, icons/) and `VERSION` (date + content
+  hash) into sw.js. Run it before every publish: installed phones only fetch new files when sw.js
+  changes. The platform test fails if a file is missing and prints a NOTE when files changed since
+  the last stamp. dev/ pages are not precached.
+* **Icons.** `tools/make-icons.js` also writes `icons/qr-cube-coach.svg`, a QR code of the hosted
+  link, shown in Settings › On your phone on laptops only. `--check` exits 1 when the icons are stale.
+* **Phone layout.** Bottom tab bar at ≤ 720 px wide; on a phone on its side (≤ 720 px wide and
+  ≤ 500 px high) the tabs move back into the top bar so the cube keeps the height. Toasts sit above
+  the tab bar. The solve screen docks its controls above the tab bar on a portrait phone and goes
+  two-column on its side.
+* **Touch on the 3D cube.** Instead of `touch-action: none` while dragging, a draggable cube's canvas
+  is `touch-action: pan-y`: touches that land on the cube's outline (plus a 12 px margin) are claimed
+  and turn/orbit the cube; touches on the background around it scroll the page vertically.
+* **Keep awake.** `CC.App.keepAwake(on, reason)`: the screen stays on while any reason is on; every
+  route change clears all reasons (screens ask again in `mount()`); `keepAwake(false)` with no reason
+  clears everything. Reasons used: `'solve'`, `'scan'` (kept inside the rescan dialog too, so closing
+  it leaves the solve's lock alone) and `'gym'` (while a round runs). `CC.App.isAwake()` reports it.
+* **Camera.** `settings.cameraFacing` is `null` (automatic: rear on phones via
+  `CC.Scanner.defaultFacing()`, front elsewhere), `'environment'` or `'user'`. It is set by
+  **Switch camera** on the scan screen and by Settings › Camera; choosing a facing clears
+  `cameraId`/`cameraLabel`, and choosing a named camera whose label says front/back sets the facing.
+  The instructions follow the camera in use (`CC.Scanner.sayFor`: "Point the camera at the GREEN
+  centre" with the rear camera, where the next face is on the learner's RIGHT). Verified: the raw
+  frame and the facelet mapping are the same for both cameras (tests/scanner.test.js). The controller
+  reports `onState` ('starting' / 'live' / 'paused' / 'blocked' / 'idle'), releases the camera while
+  the page is hidden and reopens it on return; 'blocked' needs a tap (`resume()`).
+* **Progress codes.** `CUBE1.` + base64 of a zlib stream (a small built-in deflate). About 40,000
+  characters after 300 solves (measured). `CC.Store.merge`: solves union by id; skills higher mastery,
+  larger session/soloClean counts, latest practice date; drills and gym: the record with the larger
+  total, plus the higher best streak and the lower `bestMs` for gym; practiceLog per day the larger
+  minutes; milestones earliest; algs higher box. Device settings never travel
+  (`CC.Store.DEVICE_SETTINGS`: theme, mirror, autoCapture, cameraId, cameraLabel, cameraFacing,
+  keyboard). Merge and Replace can be undone from the toast that follows. A pasted code is checked
+  as soon as it looks complete.
+* **Settings › On your phone** also shows a "Your browser" badge on the matching steps card and, in
+  the Home Screen app, "You're using the Home Screen app ✓". `go('settings', { section })` scrolls to
+  a card (`phone`, `move`, `look`, `coach`, `keys`, `camera`, `timer`, `data`, `about`).
+
+### Part B — the Middle Layer Gym
+
+* **Drills as built.** 17 drills as in the table, with these differences: `decide` is **four** taps
+  (which edge → which centre in front → which top turn → left or right); `stuck-fix` offers four ways
+  (only "front-right, Right algorithm" is right) and then has you do it; `landmark` shows three
+  pictures drawn with `CC.TopView.renderIso` (one WebGL cube per screen); `mirror` goes from single
+  moves to halves to the whole algorithm; `recall` fades the cues over a round (levels
+  1,1,2,2,3,3,3,4,4,4); `halves` shows the first move of each half at level 1.
+* **Feedback.** Every wrong option carries a `why` worked out by simulation; `CC.Gym.check()` puts it
+  first in `explain`. Wording uses plain English, British spelling and curly quotes.
+* **Round lengths.** 10 items; `halves` and `slowmo` 4; `sprint` 3. `go('gym', { drill })` with a
+  route drill (`full-virtual`, `full-real`) goes straight to the solve screen.
+* **Perform drills** (`recall`, `slip`, `stuck-fix`) count as right only within the clean number of
+  face turns + 6 (rotations don't count); `stuck-fix` also needs the right choice first. The goal
+  check holds the cube yellow-up first, needs the white layer whole and earlier edges still home;
+  `popout` accepts the edge out on top **or already put back home properly**. The `sprint` counts
+  whenever all four edges are in and records the time.
+* **Progress.** `data.gym[drillId] = { right, total, streak, best, bestMs, bestRoundMs?, lastAt,
+  recent:[last 10] }`. `bestMs` is the best sprint time (only the sprint passes a time).
+  `bestRoundMs` is the best **perfect** 10/10 round of `leftright` (`CC.Gym.recordRound`). Each answer
+  also records `CC.Coach.recordDrill(data, 'gym-' + drillId, correct)`; Stats folds those rows into
+  one "Middle Layer Gym" row. "Strong" = 8 of the last 10 right.
+* **Suggestion.** `CC.Gym.suggest(data, { hasCube })`: the weakest of groups 1–4, then its weakest
+  drill that is not strong yet; ties follow `CC.Gym.PRIORITY = [2, 1, 3, 4]` (remembering the moves
+  first, the learner's own order), so a new learner starts with "Learn it in halves". Everything
+  strong: the sprint (or the real-cube middle layer with a cube).
+* **Screen.** The hub shows "Start with this", a fold-out card with both algorithms in halves, the
+  groups in PRIORITY order and then "Put it together". In a round, left-algorithm items are shown
+  from the front-left and the stuck-fix slot from its own side. "Show me" animates the answer on the
+  3D cube; the round ends with a score, best times, "Worth another look" (the missed questions),
+  **Another round** and **Next: …** (the new suggestion).
+* **Top-layer diagram.** `CC.TopView.render(container, state, { highlight, selectable, selected, marks,
+  onSelect, size, caption, label })` → `{ el, update, focus, destroy }`, plus
+  `CC.TopView.renderIso(container, state, { side, highlight, dim, size, label, caption })`.
+* **Lesson.** `CC.Lessons.STAGES.middle` gained `halves`, `mirrorRule`, `whyItWorks`, `landmarks` and
+  `lostPlace`, shown as cards on the lesson page, and there are 9 middle demos (right, left, stuck,
+  edge at the back, not above its own colour, two in a row, wrong slot, no usable edge, the
+  yellow-edge trap).
+* **Entry points as built:** Home tile (middle is the focus stage, or the weakest practised stage
+  below Solo, or the gym was used in the last 14 days); the Middle Layer lesson and its stage card;
+  Practice › Stages; Stats (Drill accuracy links to the weakest gym drill); the solve screen on the
+  middle stage ("Stuck? Practise in the Gym", which asks before leaving a solve in progress).
+
+### Still open
+
+* `CC.View3D` has no `setView(side)` yet; the Gym turns the view with a synthetic sideways drag on an
+  empty corner of the canvas and will use `setView` as soon as it exists.
+* `CC.Store.merge` does not yet keep the faster `bestRoundMs` of two devices (it takes the record
+  with the larger total).
+* `CC.Coach.todayPlan` does not suggest the Gym; Home and Practice nudge towards it instead.

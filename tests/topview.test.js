@@ -191,7 +191,7 @@ test('gym screen loads in node without a DOM and exposes its helpers', () => {
 });
 
 test('progressOf: recent score, Strong at 8 of the last 10, best time', () => {
-  assert.deepStrictEqual(H.progressOf(null), { tried: false, recentRight: 0, recentN: 0, pct: 0, strong: false, bestMs: null, total: 0, streak: 0 });
+  assert.deepStrictEqual(H.progressOf(null), { tried: false, recentRight: 0, recentN: 0, pct: 0, strong: false, bestMs: null, bestRoundMs: null, total: 0, streak: 0 });
   const e = { right: 12, total: 15, streak: 3, best: 6, bestMs: 1820, recent: [1, 1, 0, 1, 1, 1, 1, 1, 1, 1] };
   const p = H.progressOf(e);
   assert.strictEqual(p.recentRight, 9); assert.strictEqual(p.recentN, 10); assert.strictEqual(p.strong, true);
@@ -260,6 +260,73 @@ test('stageFor and isoSide: which picture each item is shown with', () => {
   assert.strictEqual(k.faces[0], 'L');
   const L = TV.isoLayout(H.isoSide(it));
   assert.ok(L.stickers.some((s) => s.index === k.stickers[0]), 'white sticker visible in the picture');
+});
+
+test('the 3D camera looks where the action is: the Left algorithm from the front-left, a stuck slot from its side', () => {
+  const seen = (side, i) => { const n = Cube.STICKERS[i].normal, v = H.viewDir(side); return n[0] * v[0] + n[1] * v[1] + n[2] * v[2] > 0.05; };
+  // every sticker of the edge and its white corner, at every point of the algorithm, faces the camera
+  // whenever it is on the side the algorithm works on (the Left corner's white sticker faces LEFT)
+  ['recall', 'halves', 'nextmove', 'slip', 'slowmo', 'leftright', 'landmark', 'whereami'].forEach((id) => {
+    seeds(40).forEach((sd) => {
+      const it = Gym.next(id, { seed: sd * 31 });
+      const side = H.viewFor(it, id === 'leftright' || id === 'landmark' || id === 'whereami' ? 'show' : 'ask');
+      assert.strictEqual(side, it.alg === 'left' ? 'left' : 'right', id);
+      const A = Gym.ALGS[it.alg].moves, start = it.startState || it.state;
+      const after4 = Cube.applyAlg(start, A.slice(0, 4).join(' ')), k = Cube.findCorner(after4, 'W', it.edge[0], it.edge[1]);
+      if (id === 'slip') return;   // a slip state is not on the clean path
+      assert.ok(k.stickers.every((i) => seen(side, i)), id + ' seed ' + sd + ': the corner beside the edge after the first half is in view');
+      const fs = it.alg === 'left' ? [21, 41] : [23, 12];
+      assert.ok(fs.every((i) => seen(side, i)), id + ': the target slot is in view');
+    });
+  });
+  // the default view can not see the Left corner's white sticker: that is why the camera turns
+  const L4 = Gym.next('landmark', { seed: 3, concept: 'left-4' });
+  const kL = Cube.findCorner(L4.options.find((o) => o.id === L4.answer).state, 'W', L4.edge[0], L4.edge[1]);
+  assert.ok(!seen('right', kL.stickers[0]) && seen('left', kL.stickers[0]));
+  // stuck-fix: while asking, the stuck slot's two stickers are in view; doing it, the cube as held
+  const slots = {};
+  seeds(200).forEach((sd) => {
+    const it = Gym.next('stuck-fix', { seed: sd });
+    const side = H.viewFor(it, 'ask'), st = it.highlight;
+    slots[it.slot] = (slots[it.slot] || 0) + 1;
+    assert.ok(st.length === 2 && st.every((i) => seen(side, i)), 'stuck slot ' + it.slot + ' seen from ' + side);
+    assert.strictEqual(H.viewFor(it, 'perform'), 'right');
+    assert.strictEqual(H.viewFor(it, 'show'), 'right');
+  });
+  assert.ok(slots.BL && slots.BR && slots.FL && slots.FR, JSON.stringify(slots));
+  // decide never looks left before the last answer (that would give it away)
+  seeds(60).forEach((sd) => { const it = Gym.next('decide', { seed: sd }); assert.strictEqual(H.viewFor(it, 'ask'), 'right'); assert.strictEqual(H.viewFor(it, 'show'), it.alg); });
+  ['lineup', 'stuck-spot', 'sprint', 'spot', 'mirror'].forEach((id) => assert.strictEqual(H.viewFor(Gym.next(id, { seed: 4 }), 'ask'), 'right', id));
+});
+
+test('orbitPx and slotAfter: the drag that turns the camera, and where a slot goes when the cube turns', () => {
+  const K = 0.0085, deg = (px) => px * K * 180 / Math.PI;
+  assert.ok(Math.abs(deg(H.orbitPx('right', 'left')) - 68) < 1e-9, 'front-right to front-left: 68 degrees');
+  assert.ok(Math.abs(deg(H.orbitPx('left', 'right')) + 68) < 1e-9);
+  assert.strictEqual(H.orbitPx('left', 'left'), 0);
+  ['right', 'left', 'back-left', 'back-right'].forEach((a) => ['right', 'left', 'back-left', 'back-right'].forEach((b) => {
+    const d = deg(H.orbitPx(a, b));
+    assert.ok(d > -180.0001 && d <= 180.0001, 'the short way round');
+    let az = H.VIEW_AZ[a] - d; while (az <= -180) az += 360; while (az > 180) az -= 360;
+    assert.ok(Math.abs(az - H.VIEW_AZ[b]) < 1e-9 || Math.abs(Math.abs(az - H.VIEW_AZ[b]) - 360) < 1e-9, a + ' -> ' + b);
+  }));
+  // simulated: turn the whole cube and see where the slot's edge really goes
+  const SL = { FR: [23, 12], FL: [21, 41], BL: [50, 39], BR: [48, 14] };
+  Object.keys(SL).forEach((sl) => ['y', "y'", 'y2'].forEach((t) => {
+    const to = H.slotAfter(sl, t), i = Cube.stickerAfter(SL[sl][0], t);
+    assert.ok(SL[to].includes(i), sl + ' ' + t + ' -> ' + to);
+  }));
+  assert.strictEqual(H.slotAfter('BL', 'y2'), 'FR'); assert.strictEqual(H.slotAfter('FR', 'y'), 'FL'); assert.strictEqual(H.slotAfter('BR', 'y'), 'FR');
+  assert.strictEqual(H.slotAfter('FR', 'x'), null, 'an x turn takes it out of the middle layer');
+  // the stuck-fix moves start with exactly the turn that brings the slot to the front-right
+  seeds(100).forEach((sd) => { const it = Gym.next('stuck-fix', { seed: sd }); let s = it.slot; it.moves.filter((m) => /^y/.test(m)).forEach((m) => { s = H.slotAfter(s, m); }); assert.strictEqual(s, 'FR'); });
+});
+
+test('missText: a missed question says which one it was and what was on that cube', () => {
+  assert.deepStrictEqual(H.missText({ explain: 'No yellow on the front edge.' }, 1), { title: 'Question 2', text: 'No yellow on the front edge.' });
+  assert.deepStrictEqual(H.missText({ explain: 'B.', lead: 'A.' }, 0), { title: 'Question 1', text: 'A. B.' });
+  assert.deepStrictEqual(H.missText({ explain: 'A. B.', lead: 'A.' }, 0).text, 'A. B.', 'no repeat when the explanation starts with the lead');
+  assert.strictEqual(H.progressOf({ recent: [1], total: 1, bestRoundMs: 12345 }).bestRoundMs, 12345);
 });
 
 console.log(passed + ' topview tests passed');

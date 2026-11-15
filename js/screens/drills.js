@@ -92,6 +92,17 @@
     var opts = keepOrder ? [answer].concat(d) : shuffled(r, [answer].concat(d));
     return { options: opts, answer: opts.indexOf(answer) };
   }
+  // Pure: the stage with the lowest mastery among those practised (skills[id].sessions > 0). With
+  // nothing practised yet, the lowest of all (ties: the earliest stage). list = [{id}], mast = {id: 0..100}.
+  function weakestPractised(list, mast, data) {
+    var skills = data && isObj(data.skills) ? data.skills : {};
+    var tried = list.filter(function (s) { return isObj(skills[s.id]) && Number(skills[s.id].sessions) > 0; });
+    var pool = tried.length ? tried : list;
+    var w = pool[0].id;
+    pool.forEach(function (s) { if ((mast[s.id] || 0) < (mast[w] || 0)) w = s.id; });
+    return w;
+  }
+
   function stageTitle(id) {
     var L = CC().Lessons, S = CC().Solver;
     var s = L && L.STAGES && L.STAGES[id];
@@ -1773,8 +1784,9 @@
           var L = safe(function () { return Co.levelFor(d, s.id); }, 3);
           lvl[s.id] = L >= 0 && L <= 3 ? L : 3;
         });
-        var weakest = list[0].id;
-        list.forEach(function (s) { if (mast[s.id] < mast[weakest]) weakest = s.id; });
+        // Weakest of the stages practised so far: stages not started yet all sit at 0 and would always
+        // "win", pointing a learner who is stuck on one stage at a stage they haven't been taught.
+        var weakest = weakestPractised(list, mast, d);
         var mastered = list.filter(function (s) { return mast[s.id] >= SOLO_MASTERY; }).map(function (s) { return s.id; });
         var levelText = (Co && Array.isArray(Co.LEVEL_TEXT)) ? Co.LEVEL_TEXT : LEVEL_TEXT;
         var levelNames = (Co && Array.isArray(Co.LEVELS)) ? Co.LEVELS.map(function (x) { return x.name; }) : LEVEL_NAMES;
@@ -1786,6 +1798,8 @@
           : slow ? [h('strong', null, stageTitle(slow)), ' is both the slowest part of your solves and your weakest stage. Practise it a few times today.']
             : mastered.length === list.length ? ['Every stage is at Solo level. Timed solves are the best practice now.']
               : [h('strong', null, stageTitle(weakest)), ' has the lowest mastery so far. A couple of runs on the virtual cube will move it up.'];
+        var gymNudge = weakest === 'middle' && C.Gym && mast.middle < SOLO_MASTERY;
+        if (gymNudge) focusReason = focusReason.concat([' Stuck on the middle layer? The Middle Layer Gym has short exercises for each part of it.']);
 
         function stageCard(s, i) {
           var m = mast[s.id], L = lvl[s.id];
@@ -1821,7 +1835,8 @@
           h('div', { class: 'card card-sm stack stack-sm' },
             UI.stageTrack(weakest, mastered, { caption: false }),
             h('p', { class: 'small subtle m-0' }, mastered.length + ' of ' + list.length + ' stages at Solo level (mastery ' + SOLO_MASTERY + '+).')),
-          UI.callout('tip', 'Where to focus', h('p', { class: 'm-0' }, focusReason)),
+          UI.callout('tip', 'Where to focus', h('p', { class: 'm-0' }, focusReason),
+            gymNudge ? h('div', { class: 'row row-sm mt-2' }, btn('Middle Layer Gym', 'zap', go('gym'), 'btn-soft')) : null),
           h('ol', { class: 'cc-stages' }, list.map(stageCard))));
 
         if (state.stage) {
@@ -1904,6 +1919,7 @@
   def.Gen = Gen;                  // exposed for tests
   def._intendedMoves = intendedMoves;
   def._algInfo = algInfo;
+  def._weakestPractised = weakestPractised;
   // No separate js/drills.js ships: the built-in generator IS CC.Drills, so Coach (today's plan)
   // and Stats name and pick drill types from the same list this screen runs.
   if (root.CC && !root.CC.Drills) root.CC.Drills = Gen;

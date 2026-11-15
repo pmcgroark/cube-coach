@@ -150,6 +150,7 @@
     '.cc-scan__swatch:disabled{opacity:.45;cursor:not-allowed}',
     '.cc-scan__swatch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}',
     '.cc-scan__swatch .colour-dot{width:26px;height:26px;border-radius:50%}',
+    '@media (pointer:coarse){.cc-scan__swatch{min-height:44px;min-width:44px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}}',
     '.cc-scan__count{font-size:var(--text-xs);font-weight:600;color:var(--text-3);font-variant-numeric:tabular-nums}',
     '.cc-scan__count.is-over{color:var(--danger-text)}',
     '.cc-scan__faces{display:flex;flex-wrap:wrap;gap:var(--space-2)}',
@@ -167,6 +168,8 @@
     '  .cc-scan__hold{order:3}',
     '  .cc-scan__actions{order:4}',
     '  .cc-scan__more{order:5}',
+    // typing the colours in: which face and how to hold it come first, above the squares
+    '  .cc-scan__manual .cc-scan__hold{order:-1}',
     // full width, square, but never so tall that the Capture button drops below the screen
     '  .cc-scan__cam{aspect-ratio:1/1;max-height:max(240px,calc(100vh - 390px - env(safe-area-inset-bottom,0px)));max-height:max(240px,calc(100svh - 390px - env(safe-area-inset-bottom,0px)))}',
     '  .cc-scan--modal .cc-scan__cam{max-height:52vh;max-height:min(52vh,max(240px,calc(100svh - 330px)))}',
@@ -203,9 +206,12 @@
     '  .cc-scan__viewer .progress{position:absolute;left:1px;right:1px;bottom:1px;z-index:1;height:5px;border-radius:0 0 var(--radius-lg) var(--radius-lg);background:transparent;overflow:hidden}',
     '}',
     // ---- phones held sideways: camera on the left, everything else beside it
+    // (a small phone on its side is also under 720 px wide: put the two columns back, in the dialog too)
     '@media (orientation:landscape) and (max-height:520px){',
-    '  .cc-scan__grid{grid-template-columns:minmax(0,46%) minmax(0,1fr);gap:var(--space-4)}',
+    '  .cc-scan__grid,.cc-scan--modal .cc-scan__grid{display:grid;grid-template-columns:minmax(0,46%) minmax(0,1fr);gap:var(--space-4);align-items:start}',
+    '  .cc-scan__grid>.cc-scan__col{display:flex;flex-direction:column;gap:10px;min-width:0}',
     '  .cc-scan__cam{aspect-ratio:auto;height:calc(100vh - 150px);height:calc(100svh - 150px);min-height:200px;max-height:none}',
+    '  .cc-scan--modal .cc-scan__cam{height:calc(100vh - 140px);height:calc(100svh - 140px);min-height:180px;max-height:none}',
     '  .cc-scan__steps.is-compact{flex-wrap:nowrap}',
     '  .cc-scan-screen.is-live .page-head{display:none}',
     '}'
@@ -380,12 +386,13 @@
     }
 
     function cancel() { if (!finished && typeof opts.onCancel === 'function') opts.onCancel(); }
-    // keep the screen on while the camera runs (not in the dialog: the solve screen behind it owns that)
+    // keep the screen on while the camera runs. Under its own reason ('scan'), so a rescan dialog on
+    // top of a solve switching it off leaves the solve's own 'solve' lock alone.
     function awake(on) {
       on = !!on;
-      if (inModal || on === awakeOn || !App || typeof App.keepAwake !== 'function') return;
+      if (on === awakeOn || !App || typeof App.keepAwake !== 'function') return;
       awakeOn = on;
-      try { App.keepAwake(on); } catch (e) { /* ignore */ }
+      try { App.keepAwake(on, 'scan'); } catch (e) { /* ignore */ }
     }
     // which way the camera in use faces ('environment' = a phone's rear camera)
     function activeFacing() {
@@ -971,7 +978,7 @@
         manualStatus,
         h('div', { class: 'row' }, manualBack, manualNextBtn),
         manualPills,
-        h('p', { class: 'small muted m-0' }, 'Look straight at that face and tap its colours in reading order: top row left to right, then the middle row, then the bottom row. The next square is picked for you; tap any square to change it. Keys W Y G B R O work too.'))));
+        h('p', { class: 'small muted m-0' }, 'Look straight at that face and tap its colours in reading order: top row left to right, then the middle row, then the bottom row. The next square is picked for you; tap any square to change it.' + (dev.phone || dev.tablet ? '' : ' Keys W Y G B R O work too.')))));
 
     function blankState() {
       var st = [];
@@ -1252,7 +1259,7 @@
           h('p', { class: 'small muted m-0 cc-scan__rv-about' }, 'Your cube unfolded flat: GREEN face in the middle, WHITE above it, YELLOW below, RED to its right, ORANGE to its left and BLUE at the far right. Each face is drawn as you see it looking straight at it, held the way you ' + (isManual ? 'typed it in.' : 'scanned it.')),
           h('div', { class: 'cc-scan__rv-net' }, netHost),
           h('p', { class: 'xsmall subtle m-0 cc-scan__rv-hint' }, selected >= 0
-            ? 'Sticker chosen. Pick its colour below (or press W, Y, G, B, R or O).'
+            ? (dev.phone || dev.tablet ? 'Sticker chosen. Tap its real colour below.' : 'Sticker chosen. Pick its colour below (or press W, Y, G, B, R or O).')
             : 'Tap any sticker that doesn’t match your cube.'),
           h('div', { class: 'cc-scan__rv-palette' }, palette)),
         h('div', { class: 'cc-scan__col' },

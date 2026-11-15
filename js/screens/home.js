@@ -54,6 +54,8 @@
     '.cc-plan__check:hover { border-color: var(--accent); color: var(--text-3); }',
     '.cc-plan__check[aria-pressed="true"] { background: var(--success); border-color: var(--success); color: var(--surface); }',
     '.cc-plan__check .icon { width: 18px; height: 18px; }',
+    // phones & touch: a 44 px tick button (Apple's minimum tap target)
+    '@media (pointer: coarse) { .cc-plan__check { width: 44px; height: 44px; margin-top: -4px; } .cc-plan__check .icon { width: 22px; height: 22px; } }',
     '.cc-plan__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; font-size: var(--text-xs); color: var(--text-3); font-weight: 600; }',
     '.cc-plan__meta .icon { width: 14px; height: 14px; }',
     '.cc-plan__title { margin: 0 0 2px; font-size: 1rem; font-weight: 650; line-height: 1.3; }',
@@ -228,6 +230,33 @@
       case 'algs': return ['drills', { tab: 'algs' }];
       default: return ['learn', {}];
     }
+  }
+
+  // Pure: show the "Middle Layer Gym" tile on Home? Yes when the journey's focus stage is the middle
+  // layer, when the middle layer is the weakest stage practised so far (untouched stages sit at 0 and
+  // would otherwise always be "weakest"; practised = sessions > 0) and not yet mastered, or when the
+  // gym was used in the last 14 days. coach = CC.Coach (journey, masteryOf); now = ms.
+  function showGymTile(data, coach, now) {
+    if (!isObj(data)) return false;
+    now = typeof now === 'number' ? now : Date.now();
+    var focus = coach && coach.journey ? attempt(function () { return coach.journey(data, new Date(now)).focusStage; }, null) : null;
+    if (focus === 'middle') return true;
+    var skills = isObj(data.skills) ? data.skills : {};
+    function mastery(id) {
+      var m = coach && coach.masteryOf ? attempt(function () { return coach.masteryOf(data, id, new Date(now)); }, null) : null;
+      if (typeof m !== 'number' || !isFinite(m)) m = isObj(skills[id]) ? Number(skills[id].mastery) || 0 : 0;
+      return m;
+    }
+    var practised = STAGE_IDS.filter(function (id) { return isObj(skills[id]) && Number(skills[id].sessions) > 0; });
+    if (practised.indexOf('middle') !== -1) {
+      var weakest = null, low = Infinity;
+      practised.forEach(function (id) { var m = mastery(id); if (m < low) { low = m; weakest = id; } });
+      if (weakest === 'middle' && low < THRESHOLDS[0]) return true;
+    }
+    return isObj(data.gym) && Object.keys(data.gym).some(function (k) {
+      var t = ms(data.gym[k] && data.gym[k].lastAt);
+      return isFinite(t) && now - t < 14 * 864e5 && now - t > -864e5;
+    });
   }
 
   function injectStyle() {
@@ -573,16 +602,13 @@
         return h('div', { class: 'cc-quick' }, hasCube() ? [withCube, noCube] : [noCube, withCube]);
       }
 
-      // Middle Layer Gym: offered when the middle layer is the stage to work on (or the gym was used lately).
+      // Middle Layer Gym: offered when the middle layer is the stage to work on, when it is the weakest
+      // of the stages practised so far (stages not started yet are all at 0, so they don't count), or
+      // when the gym was used in the last fortnight.
       function gymTile() {
         if (!CC.Gym || !App.screens || App.screens().indexOf('gym') === -1) return null;
-        var focus = Coach && Coach.journey ? attempt(function () { return Coach.journey(data).focusStage; }, null) : null;
-        var weakest = null, low = Infinity;
-        if (Coach && Coach.masteryOf) stageList().forEach(function (s) { var m = attempt(function () { return Coach.masteryOf(data, s.id); }, 0); if (m < low) { low = m; weakest = s.id; } });
-        var recent = isObj(data.gym) && Object.keys(data.gym).some(function (k) { var t = ms(data.gym[k] && data.gym[k].lastAt); return isFinite(t) && Date.now() - t < 7 * 864e5; });
-        if (focus !== 'middle' && weakest !== 'middle' && !recent) return null;
-        return UI.tile({ icon: 'zap', title: 'Middle Layer Gym', badge: 'Stage 4', onClick: go('gym'),
-          desc: 'Stuck on the middle layer? Short exercises for remembering the moves, seeing what to do, stuck edges and keeping your place.' });
+        return showGymTile(data, Coach, Date.now()) ? UI.tile({ icon: 'zap', title: 'Middle Layer Gym', badge: 'Stage 4', onClick: go('gym'),
+          desc: 'Stuck on the middle layer? Short exercises for remembering the moves, seeing what to do, stuck edges and keeping your place.' }) : null;
       }
 
       function milestonesCard() {
@@ -646,6 +672,7 @@
   };
 
   def._routeFor = routeFor;
+  def._showGymTile = showGymTile;
   def._evidence = evidence;
   def._shownItem = shownItem;
 

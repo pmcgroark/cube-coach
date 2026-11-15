@@ -108,7 +108,9 @@
     '.cc-msgrid__name { margin: 0; font-weight: 650; line-height: 1.3; }',
     '.cc-msgrid__desc { margin: 2px 0 0; font-size: var(--text-sm); color: var(--text-2); }',
     '.cc-msgrid__when { margin: 4px 0 0; font-size: var(--text-xs); font-weight: 700; color: var(--success-text); }',
-    '.cc-msgrid > li.is-locked .cc-msgrid__when { color: var(--text-3); font-weight: 600; }'
+    '.cc-msgrid > li.is-locked .cc-msgrid__when { color: var(--text-3); font-weight: 600; }',
+    // phones & touch: the "Change goal" text link gets a 44 px tap target
+    '@media (pointer: coarse) { .cc-goal-link { display: inline-flex; align-items: center; min-height: 44px; } }'
   ].join('\n');
 
   // ------------------------------------------------------------ helpers (no DOM)
@@ -179,6 +181,27 @@
     var steps = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1200, 1800, 3600, 7200].map(function (s) { return s * 1000; });
     for (var i = 0; i < steps.length; i++) if (maxMs / steps[i] <= 5) return steps[i];
     return steps[steps.length - 1];
+  }
+
+  // Pure: the Middle Layer Gym's answers, which Coach also counts as drills under 'gym-<drillId>'.
+  // Folded into ONE row on the drill card (17 rows of raw ids like "gym-spot" told the learner nothing).
+  // -> null when the gym hasn't been used; else { right, total, lastAt, tried:[{ id, name, right, total, acc }], weakest }
+  function gymSummary(drills, Gym) {
+    if (!isObj(drills)) return null;
+    var tried = Object.keys(drills).filter(function (k) { return /^gym-/.test(k) && isObj(drills[k]) && drills[k].total > 0; }).map(function (k) {
+      var id = k.slice(4), d = drills[k];
+      var info = Gym && typeof Gym.drill === 'function' ? attempt(function () { return Gym.drill(id); }, null) : null;
+      var right = Math.max(0, Number(d.right) || 0), total = Math.max(0, Number(d.total) || 0);
+      return { id: id, name: info && info.name ? info.name : id, right: right, total: total, acc: total ? Math.round(right / total * 100) : 0, lastAt: d.lastAt || null };
+    });
+    if (!tried.length) return null;
+    var out = { right: 0, total: 0, lastAt: null, tried: tried, weakest: null };
+    tried.forEach(function (t) {
+      out.right += t.right; out.total += t.total;
+      if (t.lastAt && (!out.lastAt || tms(t.lastAt) > tms(out.lastAt))) out.lastAt = t.lastAt;
+      if (t.total >= 3 && t.acc < 80 && (!out.weakest || t.acc < out.weakest.acc)) out.weakest = t;
+    });
+    return out;
   }
 
   function injectStyle() {
@@ -664,27 +687,46 @@
         var types = D && Array.isArray(D.TYPES) && D.TYPES.length ? D.TYPES.map(function (t) { return { id: t.id, name: t.name || DRILL_NAMES[t.id] || t.id }; })
           : Object.keys(DRILL_NAMES).map(function (k) { return { id: k, name: DRILL_NAMES[k] }; });
         var drills = isObj(data.drills) ? data.drills : {};
-        Object.keys(drills).forEach(function (k) { if (!types.some(function (t) { return t.id === k; })) types.push({ id: k, name: DRILL_NAMES[k] || k }); });
+        Object.keys(drills).forEach(function (k) { if (!/^gym-/.test(k) && !types.some(function (t) { return t.id === k; })) types.push({ id: k, name: DRILL_NAMES[k] || k }); });
         var done = types.filter(function (t) { return isObj(drills[t.id]) && drills[t.id].total > 0; });
+        var gym = gymSummary(drills, CC.Gym);
         var card = h('section', { class: 'card stack', 'aria-labelledby': 'cc-drill-title' },
           h('div', { class: 'card__head m-0' },
             h('h2', { class: 'card__title', id: 'cc-drill-title' }, 'Drill accuracy'),
             h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onClick: go('drills', { tab: 'drills' }) }, UI.icon('zap', 16), 'Drills')));
-        if (!done.length) {
+        if (!done.length && !gym) {
           card.appendChild(h('p', { class: 'muted m-0' }, 'No drills yet. They take two minutes, need no cube, and train your eye to spot what to do next.'));
           return card;
         }
-        card.appendChild(h('ul', { class: 'cc-bars' }, done.map(function (t) {
-          var d = drills[t.id], acc = Math.round(d.right / d.total * 100);
+        function bar(name, right, total, sub) {
+          var acc = Math.round(right / total * 100);
           return h('li', null,
-            h('span', { class: 'cc-bars__name' }, t.name),
-            h('span', { class: 'cc-bars__val' }, d.right + ' of ' + d.total + ' right · ' + acc + '%'),
+            h('span', { class: 'cc-bars__name' }, name),
+            h('span', { class: 'cc-bars__val' }, right + ' of ' + total + ' right · ' + acc + '%'),
             h('span', {
-              class: 'cc-meter cc-bars__meter', role: 'meter', 'aria-label': t.name + ' accuracy',
+              class: 'cc-meter cc-bars__meter', role: 'meter', 'aria-label': name + ' accuracy',
               'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': acc
             }, h('span', { class: 'cc-meter__fill', style: { width: acc + '%' } })),
-            h('p', { class: 'cc-bars__sub' }, (acc >= 80 ? 'Solid. ' : acc >= 60 ? 'Getting there. ' : 'Worth another go. ') + (d.lastAt ? 'Last practised ' + fmtDate(d.lastAt) + '.' : '')));
-        })));
+            h('p', { class: 'cc-bars__sub' }, sub));
+        }
+        function verdict(acc) { return acc >= 80 ? 'Solid. ' : acc >= 60 ? 'Getting there. ' : 'Worth another go. '; }
+        var rows = done.map(function (t) {
+          var d = drills[t.id], acc = Math.round(d.right / d.total * 100);
+          return bar(t.name, d.right, d.total, verdict(acc) + (d.lastAt ? 'Last practised ' + fmtDate(d.lastAt) + '.' : ''));
+        });
+        if (gym) {
+          var gacc = Math.round(gym.right / gym.total * 100);
+          rows.push(bar('Middle Layer Gym', gym.right, gym.total,
+            (gym.tried.length === 1 ? '1 exercise tried. ' : gym.tried.length + ' exercises tried. ') +
+            (gym.weakest ? 'Worth another go: ' + gym.weakest.name + ' (' + gym.weakest.acc + '%). ' : verdict(gacc)) +
+            (gym.lastAt ? 'Last practised ' + fmtDate(gym.lastAt) + '.' : '')));
+        }
+        card.appendChild(h('ul', { class: 'cc-bars' }, rows));
+        if (gym && CC.Gym) {
+          card.appendChild(h('div', { class: 'row row-sm' },
+            h('button', { type: 'button', class: 'btn btn-soft btn-sm', onClick: go('gym', gym.weakest ? { drill: gym.weakest.id } : {}) },
+              UI.icon('zap', 16), gym.weakest ? 'Practise: ' + gym.weakest.name : 'Open the Middle Layer Gym')));
+        }
         return card;
       }
 
@@ -725,7 +767,7 @@
             h('p', { class: 'eyebrow' }, 'Progress'),
             h('h1', null, 'Your stats'),
             h('p', { class: 'muted' }, 'Goal: any cube, on your own, in under ' + clock(goal) + '. ',
-              h('a', { href: '#/settings' }, 'Change goal')))),
+              h('a', { class: 'cc-goal-link', href: '#/settings?section=timer' }, 'Change goal')))),
         noSolvesAtAll ? firstSolveCard() : null,
         h('div', { class: 'stack' }, tabBar, panel),
         masteryCard(),
@@ -742,6 +784,7 @@
   };
 
   def._levelsSummary = levelsSummary;
+  def._gymSummary = gymSummary;
   def._niceStep = niceStep;
   def._clock = clock;
 

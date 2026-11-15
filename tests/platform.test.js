@@ -719,6 +719,67 @@ test('platform detection for the Add to Home Screen steps', () => {
   assert.strictEqual(App.isStandalone(), false);
 });
 
+test('home: the Middle Layer Gym tile shows for a learner stuck on the middle layer', () => {
+  const home = require('../js/screens/home.js');
+  const show = home._showGymTile;
+  const now = Date.UTC(2026, 10, 15, 12);
+  const day = (n) => new Date(now - n * DAY);
+  // brand new: no tile
+  assert.strictEqual(show(Store.defaults(day(30)), Coach, now), false);
+  // three stages learned, middle practised but weak, later stages untouched (at 0): tile shows even
+  // though the journey has moved on, because middle is the weakest stage practised so far
+  const d = Store.defaults(day(30));
+  for (let i = 0; i < 12; i++) ['daisy', 'cross', 'corners'].forEach((st) => Coach.recordStage(d, st, { level: Coach.levelFor(d, st, day(20 - i)), hints: 0, quizRight: 2, quizTotal: 2 }, day(20 - i)));
+  assert.strictEqual(Coach.journey(d, new Date(now)).focusStage, 'middle');
+  assert.strictEqual(show(d, Coach, now), true, 'middle layer is next: tile');
+  // a few coached goes later the journey points at the yellow cross, but the middle layer is still weak
+  for (let i = 0; i < 6; i++) Coach.recordStage(d, 'middle', { level: Coach.levelFor(d, 'middle', day(10 - i)), hints: 2, quizRight: 1, quizTotal: 2 }, day(10 - i));
+  assert.notStrictEqual(Coach.journey(d, new Date(now)).focusStage, 'middle', 'journey has moved on');
+  assert.ok(Coach.masteryOf(d, 'middle', new Date(now)) < 50);
+  assert.ok(Coach.masteryOf(d, 'ycross', new Date(now)) === 0, 'later stages untouched (0, but not practised)');
+  assert.strictEqual(show(d, Coach, now), true, 'weakest practised stage: tile');
+  // once the middle layer is mastered (and the gym not used lately) the tile goes away
+  const m = JSON.parse(JSON.stringify(d));
+  m.skills.middle.mastery = 90; m.skills.middle.lastPracticed = day(1).toISOString();
+  m.skills.daisy.mastery = 95; m.skills.cross.mastery = 95; m.skills.corners.mastery = 95;
+  ['daisy', 'cross', 'corners'].forEach((st) => { m.skills[st].lastPracticed = day(1).toISOString(); });
+  if (Coach.journey(m, new Date(now)).focusStage !== 'middle') assert.strictEqual(show(m, Coach, now), false);
+  // used the gym in the last fortnight: the tile stays handy
+  m.gym = { spot: { right: 3, total: 4, recent: [1, 1, 0, 1], lastAt: day(5).toISOString() } };
+  assert.strictEqual(show(m, Coach, now), true);
+  m.gym.spot.lastAt = day(20).toISOString();
+  if (Coach.journey(m, new Date(now)).focusStage !== 'middle') assert.strictEqual(show(m, Coach, now), false);
+  assert.strictEqual(show(null, Coach, now), false);
+});
+
+test('practice › stages: "weakest" means weakest of the stages practised, not one not started yet', () => {
+  const drills = require('../js/screens/drills.js');
+  const list = Store.STAGE_IDS.map((id) => ({ id }));
+  const d = Store.defaults(new Date(T0));
+  const mast = {}; list.forEach((s) => { mast[s.id] = 0; });
+  assert.strictEqual(drills._weakestPractised(list, mast, d), 'daisy', 'nothing practised: the first stage');
+  ['daisy', 'cross', 'corners', 'middle'].forEach((id, i) => { d.skills[id].sessions = 5; mast[id] = [95, 90, 81, 28][i]; });
+  assert.strictEqual(drills._weakestPractised(list, mast, d), 'middle', 'stuck on the middle layer: middle, not the untouched yellow cross');
+  mast.cross = 20;
+  assert.strictEqual(drills._weakestPractised(list, mast, d), 'cross');
+});
+
+test('stats: Middle Layer Gym answers show as one named row, never as raw "gym-spot" ids', () => {
+  const stats = require('../js/screens/stats.js');
+  require('../js/solver.js');
+  const Gym = require('../js/gym.js');
+  assert.strictEqual(stats._gymSummary({ notation: { right: 3, total: 4 } }, Gym), null, 'no gym yet');
+  const d = Store.defaults(new Date(T0));
+  [['spot', [1, 1, 1, 1, 1]], ['halves', [1, 0, 0, 1]], ['landmark', [0, 0, 1]], ['nextmove', [1]]].forEach(([id, rs], k) =>
+    rs.forEach((c, j) => Gym.record(d, id, !!c, {}, new Date(T0 + (k * 10 + j) * 60000))));
+  const g = stats._gymSummary(d.drills, Gym);
+  assert.strictEqual(g.total, 13); assert.strictEqual(g.right, 9);
+  assert.deepStrictEqual(g.tried.map((t) => t.name), ['spot', 'halves', 'landmark', 'nextmove'].map((id) => Gym.drill(id).name));
+  assert.ok(g.tried.every((t) => !/^gym-/.test(t.name)));
+  assert.strictEqual(g.weakest.id, 'landmark', 'weakest with 3+ answers');
+  assert.strictEqual(g.lastAt, d.drills['gym-nextmove'].lastAt);
+});
+
 // ------------------------------------------------------------------ run
 (async () => {
   for (const t of pendingTests) await t();

@@ -242,8 +242,63 @@
     '  .cc-solve-col-bar { display: none; }',
     '  .cc-solve__head .btn-label { display: none; }',
     '}',
-    '@media (hover: none) { .cc-solve .kbd { display: none; } }'
+    '@media (hover: none) { .cc-solve .kbd { display: none; } }',
+    '@media (pointer: coarse) { .cc-solve-speed .select { min-height: 44px; } }',
+    // a phone without a keyboard: no keyboard legend, no "press 1-4" hints
+    '@media (hover: none) and (pointer: coarse) { .cc-solve-legend, .cc-solve-keyhint { display: none; } }',
+    '.cc-solve__extra { display: flex; justify-content: flex-end; }',
+    '.cc-solve-btn__label { display: inline; }',
+    // ---- phones, portrait: a slim heading, and the main controls in a dock just above the tab bar,
+    //      always within thumb reach while the page scrolls (render: placeTransport()).
+    '@media (max-width: 720px) {',
+    '  .cc-solve__head { flex-wrap: nowrap; align-items: center; margin-bottom: var(--space-3); }',
+    '  .cc-solve__head > div:first-child { min-width: 0; }',
+    '  .cc-solve__head .eyebrow { display: none; }',
+    '  .cc-solve__head h1 { font-size: clamp(1.2rem, 5.4vw, 1.55rem); line-height: 1.2; }',
+    '  .cc-solve__head .row { flex-wrap: nowrap; flex: none; }',
+    '}',
+    '.cc-solve__transport.is-docked { position: sticky; z-index: 30; bottom: calc(var(--bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px));',
+    '  margin: var(--space-4) calc(-1 * max(var(--gutter), env(safe-area-inset-right, 0px))) calc(-1 * var(--space-6)) calc(-1 * max(var(--gutter), env(safe-area-inset-left, 0px)));',
+    '  padding: 8px max(var(--gutter), env(safe-area-inset-right, 0px)) 8px max(var(--gutter), env(safe-area-inset-left, 0px));',
+    '  background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.08); }',
+    '.cc-solve__transport.is-docked:empty { display: none; }',
+    '.is-docked .cc-solve-transport { flex-wrap: nowrap; gap: 8px; }',
+    '.is-docked .cc-solve-transport > .btn { flex: none; }',
+    '.is-docked .cc-solve-transport > .btn-primary { flex: 1 1 auto; min-width: 0; }',
+    '.is-docked .cc-solve-transport > .btn-primary .cc-solve-btn__label { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+    '.is-docked .is-squeeze { width: 46px; padding-inline: 0; }',
+    '.cc-solve-dock__note { flex: 1 1 auto; min-width: 0; align-self: center; line-height: 1.3; }',
+    '.cc-solve-docktimer { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; line-height: 1.1; }',
+    '.cc-solve-docktimer .timer { font-size: 1.75rem; text-align: right; }',
+    '.cc-solve-docktimer__label { font-size: var(--text-xs); color: var(--text-2); text-align: right; max-width: 100%; line-height: 1.25; }',
+    // toasts ("White Cross done in …") pop up above the dock, not over its buttons
+    'html:not(.has-modal) body:has(.cc-solve__transport.is-docked:not(:empty)) .toast-region { bottom: calc(var(--bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px) + 74px); }',
+    '.is-docked .is-squeeze .cc-solve-btn__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }',
+    // things scrolled into view (a new hint, a focused button) stop above the dock and the tab bar
+    '.cc-solve--docked .cc-solve-hint, .cc-solve--docked [data-focus] { scroll-margin-top: calc(var(--topbar-h, 56px) + 12px); scroll-margin-bottom: calc(var(--bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px) + 84px); }',
+    '.cc-solve--docked .cc-solve-move .alg-chips--lg { gap: 6px; }',
+    '.cc-solve--docked .cc-solve-move .alg-chips--lg .alg-chip { font-size: 1.05rem; }',
+    // ---- phones on their side: the cube on the left (kept in view), everything else scrolls on the right
+    '@media (orientation: landscape) and (max-height: 500px) {',
+    '  .cc-solve__head { flex-wrap: nowrap; align-items: center; margin-bottom: var(--space-2); }',
+    '  .cc-solve__head > div:first-child { min-width: 0; }',
+    '  .cc-solve__head .eyebrow { display: none; }',
+    '  .cc-solve__head h1 { font-size: 1.2rem; line-height: 1.2; }',
+    '  .cc-solve__head .btn-label { display: none; }',
+    '  .cc-solve .solve-layout { grid-template-columns: minmax(0, 46%) minmax(0, 1fr); grid-template-rows: repeat(6, auto); column-gap: var(--space-4); row-gap: var(--space-3); }',
+    '  .cc-solve .solve-layout__stage { display: contents; }',
+    '  .cc-solve .solve-layout .cc-solve__vp { grid-column: 1; grid-row: 1 / 7; align-self: start; position: sticky; top: calc(var(--topbar-h) + 8px);',
+    '    height: calc(100vh - var(--topbar-h) - 80px); height: calc(100dvh - var(--topbar-h) - 80px); min-height: 180px; max-height: none; aspect-ratio: auto; }',
+    '  .cc-solve .solve-layout > .solve-layout__panel, .cc-solve .solve-layout__stage > :not(.cc-solve__vp) { grid-column: 2; min-width: 0; }',
+    '}'
   ].join('\n');
+
+  function media(q) { try { return !!(root.matchMedia && root.matchMedia(q).matches); } catch (e) { return false; } }
+  var PHONE_Q = '(max-width: 720px)', SIDEWAYS_Q = '(orientation: landscape) and (max-height: 500px)';
+  // Portrait phone: the main controls sit in a dock above the tab bar.
+  function phoneDock() { return media(PHONE_Q) && !media(SIDEWAYS_Q); }
+  // A touch screen with no mouse (and so, usually, no keyboard): say "tap", not "press Space".
+  function touchOnly() { return media('(hover: none) and (pointer: coarse)'); }
 
   function injectStyle() {
     if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
@@ -313,6 +368,15 @@
       return id;
     }
     function active() { try { App.markActive(); } catch (e) { /* ignore */ } }
+    // Keep the phone's screen on from the moment the solve screen opens until the solve ends (summary,
+    // problem card, leaving). Under the reason 'solve', so a rescan dialog's own lock can come and go.
+    var awakeOn = false;
+    function awake(on) {
+      on = !!on && !destroyed;
+      if (on === awakeOn || !App || typeof App.keepAwake !== 'function') return;
+      awakeOn = on;
+      try { App.keepAwake(on, 'solve'); } catch (e) { /* ignore */ }
+    }
     function toast(text, opts) { try { return App.toast(text, opts); } catch (e) { return null; } }
     function announce(text) { if (ui.live) { ui.live.textContent = ''; ui.live.textContent = text; } }
     function icon(name, size) { return UI.icon(name, size || 18); }
@@ -504,13 +568,16 @@
       ui.moveArea = h('div', { class: 'cc-solve__move' });
       ui.transport = h('div', { class: 'cc-solve__transport' });
       ui.padArea = h('div', { class: 'cc-solve__pad' });
-      ui.stageCol = h('div', { class: 'solve-layout__stage cc-solve__stage' }, ui.timedCard, ui.vp, ui.moveArea, ui.transport, ui.padArea);
+      ui.extra = h('div', { class: 'cc-solve__extra' });
+      ui.stageCol = h('div', { class: 'solve-layout__stage cc-solve__stage' }, ui.timedCard, ui.vp, ui.moveArea, ui.transport, ui.extra, ui.padArea);
       ui.panel = h('aside', { class: 'solve-layout__panel coach-panel cc-solve__panel', 'aria-label': 'Coach' });
       ui.live = h('p', { class: 'sr-only', 'aria-live': 'polite', 'aria-atomic': 'true' });
       ui.root.appendChild(ui.head);
       ui.root.appendChild(h('div', { class: 'solve-layout' }, ui.stageCol, ui.panel));
       ui.root.appendChild(ui.live);
       el.appendChild(ui.root);
+      placeTransport();
+      watchLayout();
 
       var v = null;
       try {
@@ -546,6 +613,46 @@
       ui.status.hidden = false;
       ui.status.appendChild(h('span', { class: 'spinner', 'aria-hidden': 'true' }));
       ui.status.appendChild(document.createTextNode(text));
+    }
+
+    // On a portrait phone the controls live in a dock at the end of the screen, held just above the tab
+    // bar by position:sticky, so Next move / Do it for me / Stage done are always under the thumb.
+    // Elsewhere they sit under the cube as before.
+    function placeTransport() {
+      if (!ui.transport || !ui.root) return;
+      S.docked = phoneDock();
+      // phone portrait (dock) or on its side (two columns): the cards' own buttons move into the controls
+      S.actions = S.docked || media(SIDEWAYS_Q);
+      ui.transport.classList.toggle('is-docked', S.docked);
+      ui.root.classList.toggle('cc-solve--docked', S.docked);
+      if (S.docked) { if (ui.transport.parentNode !== ui.root || ui.transport.nextSibling) ui.root.appendChild(ui.transport); }
+      else if (ui.transport.parentNode !== ui.stageCol) ui.stageCol.insertBefore(ui.transport, ui.extra);
+    }
+    var mqls = [];
+    function onLayoutChange() {
+      if (destroyed || !ui.root || (phoneDock() === S.docked && (S.docked || media(SIDEWAYS_Q)) === S.actions)) return;
+      placeTransport();
+      if (S.phase !== 'done') {
+        refresh();
+        // turned on its side: the controls are at the top of the right-hand column, so start there
+        if (S.actions && !S.docked) { try { root.scrollTo(0, 0); } catch (e) { /* ignore */ } }
+      }
+    }
+    function watchLayout() {
+      if (mqls.length || !root.matchMedia) return;
+      [PHONE_Q, SIDEWAYS_Q].forEach(function (q) {
+        try {
+          var m = root.matchMedia(q);
+          if (m.addEventListener) m.addEventListener('change', onLayoutChange); else if (m.addListener) m.addListener(onLayoutChange);
+          mqls.push(m);
+        } catch (e) { /* ignore */ }
+      });
+    }
+    function unwatchLayout() {
+      mqls.forEach(function (m) {
+        try { if (m.removeEventListener) m.removeEventListener('change', onLayoutChange); else if (m.removeListener) m.removeListener(onLayoutChange); } catch (e) { /* ignore */ }
+      });
+      mqls = [];
     }
 
     // ---------------------------------------------------------------- rendering
@@ -621,7 +728,7 @@
         box.appendChild(h('section', { class: 'card card-sm cc-solve-move', 'aria-label': 'Scramble moves' },
           h('p', { class: 'cc-solve-move__ctx' }, i < scr.length ? 'Move ' + (i + 1) + ' of ' + scr.length : 'All ' + scr.length + ' moves done'),
           i < scr.length ? moveNow(scr[i])
-            : h('p', { class: 'cc-solve-move__done' }, icon('check', 20), 'That’s the scramble. Press Ready when your cube matches the picture.'),
+            : h('p', { class: 'cc-solve-move__done' }, icon('check', 20), 'That’s the scramble. ' + (touchOnly() ? 'Tap' : 'Press') + ' Ready when your cube matches the picture.'),
           UI.algChips(scr, { current: i < scr.length ? i : -1, done: i, size: 'lg', label: 'Scramble' })));
         return;
       }
@@ -646,11 +753,17 @@
         box.appendChild(card);
         return;
       }
+      if (tracking() && S.quiz && S.actions) {
+        // Phone: the question goes right under the cube, so the piece it asks about stays in view
+        // (Skip / Continue are in the dock).
+        box.appendChild(quizCard(step));
+        return;
+      }
       if (tracking() && S.quiz && !S.quiz.answered) {
         // On a phone the question sits below the cube: say where it is.
         card.appendChild(h('p', { class: 'cc-solve-move__ctx' }, S.level === 3 ? 'Before the moves: a quick question' : 'A quick question first'));
         card.appendChild(h('p', { class: 'm-0' }, (quizNeedsFocus() ? 'Look at the highlighted piece and answer the question in the coach panel' : 'Look at the cube and answer the question in the coach panel') +
-          ' (or press Skip).'));
+          (touchOnly() ? ' (or tap Skip).' : ' (or press Skip).')));
         card.appendChild(h('div', { class: 'row row-sm' }, btn('Go to the question', { cls: 'btn-sm btn-secondary', focus: 'to-quiz', onClick: function () {
           var o = el.querySelector('[data-focus="opt-0"]');
           if (o) { try { o.scrollIntoView({ block: 'center', behavior: UI.reducedMotion() ? 'auto' : 'smooth' }); o.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
@@ -679,7 +792,8 @@
       }
       if (tracking() && S.level === 2 && !S.quiz) {
         card.appendChild(h('p', { class: 'cc-solve-move__ctx' }, 'Moves hidden'));
-        card.appendChild(h('p', { class: 'm-0' }, P.virtual ? 'Make the moves on the cube — I’m following along.' : 'Do this step on your cube, then press Done.'));
+        card.appendChild(h('p', { class: 'm-0' }, P.virtual ? 'Make the moves on the cube — I’m following along.'
+          : S.actions ? 'Do this step on your cube, then tap Step done.' : 'Do this step on your cube, then ' + (touchOnly() ? 'tap' : 'press') + ' Done with this step.'));
         box.appendChild(card);
         return;
       }
@@ -699,10 +813,11 @@
         if (!primary && e && e.detail > 0 && e.currentTarget && e.currentTarget.blur) e.currentTarget.blur();
         return opts.onClick.apply(this, arguments);
       };
+      // squeeze: in the phone dock only the icon shows (the label stays for screen readers)
       return h('button', {
-        type: 'button', class: ['btn', opts.cls || 'btn-secondary'], disabled: !!opts.disabled, onClick: onClick,
-        dataset: { focus: opts.focus || null }, title: opts.title || null, 'aria-keyshortcuts': opts.keys || null
-      }, opts.icon ? icon(opts.icon, 18) : null, label, opts.kbd ? kbd(opts.kbd) : null);
+        type: 'button', class: ['btn', opts.cls || 'btn-secondary', opts.squeeze ? 'is-squeeze' : null], disabled: !!opts.disabled, onClick: onClick,
+        dataset: { focus: opts.focus || null }, title: opts.title || (opts.squeeze ? label : null), 'aria-keyshortcuts': opts.keys || null
+      }, opts.icon ? icon(opts.icon, 18) : null, h('span', { class: 'cc-solve-btn__label' }, label), opts.kbd ? kbd(opts.kbd) : null);
     }
 
     function speedControl() {
@@ -726,50 +841,127 @@
       if (!box) return;
       var key = focusKey();
       UI.empty(box);
+      if (ui.extra) UI.empty(ui.extra);
       buildTransport(box);
       restoreFocus(key);
+    }
+    // The speed menu: in the row of controls, or (phone dock) on its own small row under the move card.
+    function speedSlot(row) {
+      if (S.docked && ui.extra) ui.extra.appendChild(speedControl());
+      else row.appendChild(speedControl());
     }
 
     function buildTransport(box) {
       var row = h('div', { class: 'cc-solve-transport', role: 'group', 'aria-label': 'Controls' });
+      var dock = !!S.actions;
       if (S.phase === 'setup') {
         var n = S.scramble.length, i = S.setupIdx, busy = pending > 0;
-        row.appendChild(btn('Back', { icon: 'arrowLeft', disabled: busy || i === 0, onClick: setupBack, focus: 'back', keys: 'ArrowLeft', title: 'Undo the last scramble move on screen (←)' }));
-        row.appendChild(btn('Next move', { cls: 'btn-primary', icon: 'play', kbd: 'Space', disabled: i >= n || pending > 1, onClick: setupNext, focus: 'next', keys: 'Space ArrowRight' }));
-        row.appendChild(btn('Show the rest', { icon: 'zap', disabled: busy || i >= n, onClick: setupAll, focus: 'all' }));
-        row.appendChild(speedControl());
+        row.appendChild(btn('Back', { icon: 'arrowLeft', squeeze: true, disabled: busy || i === 0, onClick: setupBack, focus: 'back', keys: 'ArrowLeft', title: 'Undo the last scramble move on screen (←)' }));
+        if (dock && i >= n) {   // the scramble is done: Ready takes the big button
+          row.appendChild(btn('Ready — my cube matches', { cls: 'btn-primary', icon: 'check', onClick: setupReady, focus: 'ready-dock' }));
+        } else {
+          row.appendChild(btn('Next move', { cls: 'btn-primary', icon: 'play', kbd: 'Space', disabled: i >= n || pending > 1, onClick: setupNext, focus: 'next', keys: 'Space ArrowRight' }));
+          row.appendChild(btn('Show the rest', { icon: 'zap', squeeze: true, disabled: busy || i >= n, onClick: setupAll, focus: 'all' }));
+        }
+        speedSlot(row);
         box.appendChild(row);
         return;
       }
       if (S.phase !== 'solving' || P.timed) {
         if (P.virtual && P.timed && (S.phase === 'solving' || S.phase === 'ready' || S.phase === 'inspect')) {
           row.appendChild(btn('Undo', { icon: 'arrowLeft', onClick: undo, focus: 'undo', kbd: '⌘Z', disabled: !S.history.length }));
+          if (dock) {   // phone: the clock rides with the controls, always in sight while you turn
+            var tcls = S.phase === 'inspect' ? 'is-inspecting' : S.phase === 'solving' ? 'is-running' : '';
+            ui.big = h('span', { class: ['timer', 'cc-solve-docktimer__time', tcls] }, timerText());
+            ui.bigLabel = h('span', { class: 'cc-solve-docktimer__label' }, timerLabel());
+            row.appendChild(h('div', { class: 'cc-solve-docktimer', role: 'timer', 'aria-live': 'off' }, ui.big, ui.bigLabel));
+          }
           box.appendChild(row);
-        }
+        } else if (dock && P.timed && !P.virtual && timedButtons(row)) box.appendChild(row);
         return;
       }
       var step = stepObj();
       var lock = S.quiz || S.gate || S.demo || S.playing || S.stepEnding;
+      if (dock && tracking() && S.quiz) {
+        if (!S.quiz.answered) row.appendChild(h('span', { class: 'small muted cc-solve-dock__note' }, S.docked ? 'Answer the question under the cube' : 'Answer the question above'));
+        row.appendChild(quizButtons());
+        box.appendChild(row);
+        return;
+      }
       if (P.virtual) {
         row.appendChild(btn('Undo', { icon: 'arrowLeft', onClick: undo, focus: 'undo', kbd: '⌘Z', disabled: !S.history.length, title: 'Undo your last move (Ctrl/Cmd+Z or ←)' }));
         if (showingMoves() && step) {
           row.appendChild(S.drop && S.history.length
             ? btn('Undo that move', { cls: 'btn-primary', icon: 'arrowLeft', kbd: 'Space', onClick: doForMe, focus: 'auto', disabled: !!lock })
             : btn('Do it for me', { cls: 'btn-primary', icon: 'play', kbd: 'Space', onClick: doForMe, focus: 'auto', disabled: !!lock || S.mi >= step.moves.length }));
+        } else if (dock && S.level <= 1) {
+          var hb = hintButton(); if (hb) row.appendChild(hb);
+        } else if (dock && S.level === 2 && tracking() && step && !S.quiz) {
+          row.appendChild(coachButtons(true)[1]);   // Show moves
         }
-        row.appendChild(btn('Reset stage', { icon: 'refresh', onClick: resetStage, focus: 'reset', title: 'Put the cube back as it was at the start of this stage' }));
-        row.appendChild(speedControl());
+        row.appendChild(btn('Reset stage', { icon: 'refresh', squeeze: true, onClick: resetStage, focus: 'reset', title: 'Put the cube back as it was at the start of this stage' }));
+        speedSlot(row);
         box.appendChild(row);
         return;
       }
-      if (!showingMoves() || !step) { if (tracking()) { row.appendChild(speedControl()); box.appendChild(row); } return; }
+      // real cube, phone dock: the step card's / stage card's own buttons move down here
+      if (dock && S.gate === 'rescan') { gateButtons(true).forEach(function (b) { if (b) row.appendChild(b); }); box.appendChild(row); return; }
+      if (dock && S.level <= 1) { selfButtons(true).forEach(function (b) { if (b) row.appendChild(b); }); box.appendChild(row); return; }
+      if (!showingMoves() || !step) {
+        if (dock && tracking() && step && !S.quiz) coachButtons(true).forEach(function (b) { if (b) row.appendChild(b); });
+        if (tracking()) speedSlot(row);
+        if (row.firstChild) box.appendChild(row);
+        return;
+      }
       var atStart = S.mi === 0 && S.pi === 0;
-      row.appendChild(btn('Back', { icon: 'arrowLeft', onClick: backMove, focus: 'back', disabled: !!lock || pending > 0 || atStart, keys: 'ArrowLeft', title: 'Back a move (←)' }));
+      row.appendChild(btn('Back', { icon: 'arrowLeft', squeeze: true, onClick: backMove, focus: 'back', disabled: !!lock || pending > 0 || atStart, keys: 'ArrowLeft', title: 'Back a move (←)' }));
       row.appendChild(btn('Next move', { cls: 'btn-primary', icon: 'play', kbd: 'Space', onClick: nextMove, focus: 'next', disabled: !!lock || pending > 1 || S.mi >= step.moves.length, keys: 'Space ArrowRight' }));
-      row.appendChild(btn('Replay', { icon: 'refresh', onClick: replayStep, focus: 'replay', disabled: !!lock || pending > 0, kbd: 'R', keys: 'R', title: 'Watch this step again' }));
-      row.appendChild(btn('Play step', { icon: 'zap', onClick: playStep, focus: 'play', disabled: !!lock || pending > 0 || S.mi >= step.moves.length, title: 'Play the rest of this step' }));
-      row.appendChild(speedControl());
+      row.appendChild(btn('Replay', { icon: 'refresh', squeeze: true, onClick: replayStep, focus: 'replay', disabled: !!lock || pending > 0, kbd: 'R', keys: 'R', title: 'Watch this step again' }));
+      row.appendChild(btn('Play step', { icon: 'zap', squeeze: true, onClick: playStep, focus: 'play', disabled: !!lock || pending > 0 || S.mi >= step.moves.length, title: 'Play the rest of this step' }));
+      speedSlot(row);
       box.appendChild(row);
+    }
+
+    // Buttons shared by the cards (wide screens) and the phone dock (dock = true: shorter labels).
+    function coachButtons(dock) {
+      return [
+        !P.virtual ? btn(dock ? 'Step done' : 'Done with this step', { cls: 'btn-primary', icon: 'check', onClick: doneWithStep, focus: 'done-step', kbd: 'Enter', disabled: S.playing || pending > 0, title: dock ? 'Done with this step' : null }) : null,
+        btn('Show moves', { icon: 'watch', onClick: revealMoves, focus: 'reveal', kbd: 'H', title: 'Shows this step move by move (counts as a hint)' })
+      ];
+    }
+    function selfButtons(dock) {
+      return [
+        btn('Stage done', { cls: dock ? 'btn-primary' : 'btn-primary btn-lg', icon: 'check', onClick: stageDonePressed, focus: 'stage-done', kbd: 'Space', keys: 'Space Enter' }),
+        dock ? hintButton() : btn('I’m lost', { icon: 'camera', onClick: lost, focus: 'lost', title: 'Rescan your cube and get a fresh plan' })
+      ];
+    }
+    function gateButtons(dock) {
+      var can = scanAvailable();
+      return [
+        can ? btn('Scan my cube', { cls: 'btn-primary', icon: 'camera', onClick: function () { doRescan('gate').then(function () { refresh(); }); }, focus: 'gate-scan' }) : null,
+        btn(can ? (dock ? 'Skip' : 'Skip — it looks like the picture') : 'Continue', { cls: can ? 'btn-ghost' : 'btn-primary', onClick: skipGate, focus: 'gate-skip', title: can ? 'Skip — my cube looks like the picture' : null })
+      ];
+    }
+    // The hint button for the dock (Nudge / Solo, timed): the hints themselves appear in the coach panel.
+    function hintButton() {
+      if (!(P.timed || S.level <= 1)) return null;
+      var lvl = S.hintLevel, more = moreHints();
+      var label = lvl === 0 ? 'Hint' : lvl < 3 ? 'Another hint' : more ? 'Next hint' : 'No more hints';
+      return btn(label, { icon: 'tip', onClick: requestHint, focus: 'hint-dock', disabled: (lvl >= 3 && !more) || !hintAllowed() });
+    }
+    // Timed real-cube solve: the big start / split / stop button (panel, or the phone dock).
+    function timedButtons(row) {
+      var phase = S.phase, cur = stageObj(), lg = row ? '' : ' btn-lg';
+      var out = [];
+      if (phase === 'ready') out.push(btn(settings.inspection !== false ? 'Start inspection' : 'Start timer', { cls: 'btn-primary' + lg, icon: 'timer', onClick: timedSpace, focus: 'timed-main', kbd: 'Space' }));
+      else if (phase === 'inspect') out.push(btn('Start solving', { cls: 'btn-primary' + lg, icon: 'play', onClick: timedSpace, focus: 'timed-main', kbd: 'Space' }));
+      else if (phase === 'solving' && cur) {
+        var splits = settings.splitTaps !== false && P.source !== 'drill' && stageIndex(cur.id) < 7;
+        out.push(btn(splits ? stageMeta(cur.id).short + ' done' : 'Stop', { cls: 'btn-primary' + lg, icon: splits ? 'check' : 'pause', onClick: timedSpace, focus: 'timed-main', kbd: 'Space' }));
+        if (splits) out.push(btn('Stop — solved', { icon: 'pause', onClick: stopTimed, focus: 'timed-stop' }));
+      }
+      if (row) out.forEach(function (b) { row.appendChild(b); });
+      return out.length ? out : null;
     }
 
     function renderPad() {
@@ -904,7 +1096,7 @@
             btn('Continue', { cls: 'btn-primary', icon: 'arrowRight', onClick: function () { completeStage({ free: true }); refresh(); }, focus: 'continue', kbd: 'Enter' }),
             !P.virtual ? btn('I’m lost', { icon: 'camera', onClick: lost, focus: 'lost' }) : null));
       }
-      if (lvl >= 2 && S.quiz) return quizCard(step);
+      if (lvl >= 2 && S.quiz) return S.actions ? null : quizCard(step);
       if (lvl >= 2) return showingMoves() ? showCard(stg, step) : coachCard(stg, step);
       return selfCard();
     }
@@ -953,9 +1145,12 @@
       card.appendChild(stepProgress(stg));
       var nc = noteCallout(); if (nc) card.appendChild(nc);
       var dc = dropCallout(); if (dc) card.appendChild(dc);
+      var tap = touchOnly();
       card.appendChild(h('p', { class: 'small muted m-0' }, P.virtual
-        ? 'Make the move the arrow shows: drag that layer, use the buttons below the cube, or the keyboard. Stuck? “Do it for me”.'
-        : 'Do each move on your cube, then press Space (or Next move). ← goes back a move.'));
+        ? (tap ? 'Make the move the arrow shows: swipe that layer on the cube, or use the move buttons below it. Stuck? Tap “Do it for me”.'
+          : 'Make the move the arrow shows: drag that layer, use the buttons below the cube, or the keyboard. Stuck? “Do it for me”.')
+        : (tap ? 'Do each move on your cube, then tap Next move. The back arrow goes back a move.'
+          : 'Do each move on your cube, then press Space (or Next move). ← goes back a move.')));
       if (!P.virtual && S.level === 2) {
         card.appendChild(h('div', { class: 'row row-sm' }, btn('Done with this step', { cls: 'btn-secondary', icon: 'check', onClick: doneWithStep, focus: 'done-step', kbd: 'Enter', disabled: S.playing || pending > 0 })));
       }
@@ -972,12 +1167,12 @@
       var nc = noteCallout(); if (nc) card.appendChild(nc);
       var dc = dropCallout(); if (dc) card.appendChild(dc);
       if (P.virtual && S.offPlan && !S.drop) card.appendChild(h('p', { class: 'small muted m-0' }, 'You’re doing it your own way — that’s fine. When you pause, I’ll update the plan from your cube.'));
+      var docked = S.actions && !P.virtual;
       card.appendChild(h('p', { class: 'small muted m-0' }, P.virtual
         ? 'Make the moves on the cube yourself — I’m following along and will move on when the step is done.'
-        : 'Do this step on your cube from memory, then press Done.'));
-      card.appendChild(h('div', { class: 'row row-sm' },
-        !P.virtual ? btn('Done with this step', { cls: 'btn-primary', icon: 'check', onClick: doneWithStep, focus: 'done-step', kbd: 'Enter', disabled: S.playing || pending > 0 }) : null,
-        btn('Show moves', { icon: 'watch', onClick: revealMoves, focus: 'reveal', kbd: 'H', title: 'Shows this step move by move (counts as a hint)' })));
+        : docked ? 'Do this step on your cube from memory, then tap Step done' + (S.docked ? ' at the bottom of the screen.' : '.')
+          : 'Do this step on your cube from memory, then ' + (touchOnly() ? 'tap' : 'press') + ' Done with this step.'));
+      if (!S.actions) card.appendChild(h('div', { class: 'row row-sm' }, coachButtons(false)));
       card.appendChild(h('p', { class: 'xsmall subtle m-0' }, 'Showing the moves counts as a hint.'));
       return card;
     }
@@ -1006,10 +1201,16 @@
           h('p', { class: 'quiz__prompt' }, quiz.prompt),
           opts,
           feedback),
-        h('div', { class: 'row row-sm' }, q.answered
-          ? btn(S.level === 3 ? 'Show me the moves' : 'Continue', { cls: 'btn-primary', icon: 'arrowRight', onClick: finishQuiz, focus: 'quiz-continue', kbd: 'Space' })
-          : btn('Skip', { cls: 'btn-ghost', onClick: skipQuiz, focus: 'quiz-skip', title: 'Skip the question (doesn’t count against you)' }),
-        !q.answered ? h('span', { class: 'xsmall subtle' }, 'Press 1–' + quiz.options.length + ' to answer.') : null));
+        S.actions ? null : h('div', { class: 'row row-sm' }, quizButtons(),
+        !q.answered ? h('span', { class: 'xsmall subtle cc-solve-keyhint' }, 'Press 1–' + quiz.options.length + ' to answer.') : null));
+    }
+
+    function quizButtons() {
+      var q = S.quiz;
+      if (!q) return null;
+      return q.answered
+        ? btn(S.level === 3 ? 'Show me the moves' : 'Continue', { cls: 'btn-primary', icon: 'arrowRight', onClick: finishQuiz, focus: 'quiz-continue', kbd: 'Space' })
+        : btn('Skip', { cls: S.actions ? 'btn-secondary' : 'btn-ghost', onClick: skipQuiz, focus: 'quiz-skip', title: 'Skip the question (doesn’t count against you)' });
     }
 
     function gateCard() {
@@ -1019,9 +1220,7 @@
         h('h3', { class: 'm-0' }, 'Show me your cube so I can guide the next stage'),
         h('p', { class: 'm-0 muted' }, 'You did ' + prev + ' on your own, so I don’t know exactly how your cube looks now. ' +
           (can ? 'A quick scan lets me guide this stage move by move.' : 'Rescanning isn’t available right now, so check your cube looks like the picture before you carry on.')),
-        h('div', { class: 'row row-sm' },
-          can ? btn('Scan my cube', { cls: 'btn-primary', icon: 'camera', onClick: function () { doRescan('gate').then(function () { refresh(); }); }, focus: 'gate-scan' }) : null,
-          btn(can ? 'Skip — it looks like the picture' : 'Continue', { cls: can ? 'btn-ghost' : 'btn-primary', onClick: skipGate, focus: 'gate-skip' })));
+        S.actions ? null : h('div', { class: 'row row-sm' }, gateButtons(false)));
     }
 
     function selfCard() {
@@ -1034,12 +1233,11 @@
         var dc = dropCallout(); if (dc) card.appendChild(dc);
         return card;
       }
+      var tap = touchOnly();
       card.appendChild(h('p', { class: 'm-0' }, lvl === 1
-        ? 'Work through this stage on your own. If you get stuck, press Hint — each press tells you a bit more.'
-        : 'Over to you. Press Stage done (or Space) the moment the stage is finished.'));
-      card.appendChild(h('div', { class: 'row row-sm' },
-        btn('Stage done', { cls: 'btn-primary btn-lg', icon: 'check', onClick: stageDonePressed, focus: 'stage-done', kbd: 'Space', keys: 'Space Enter' }),
-        btn('I’m lost', { icon: 'camera', onClick: lost, focus: 'lost', title: 'Rescan your cube and get a fresh plan' })));
+        ? 'Work through this stage on your own. If you get stuck, ' + (tap ? 'tap' : 'press') + ' Hint — each press tells you a bit more.'
+        : (tap ? 'Over to you. Tap Stage done the moment the stage is finished.' : 'Over to you. Press Stage done (or Space) the moment the stage is finished.')));
+      if (!S.actions) card.appendChild(h('div', { class: 'row row-sm' }, selfButtons(false)));
       return card;
     }
 
@@ -1065,9 +1263,17 @@
         h('div', { class: 'row row-between' }, h('h3', { class: 'm-0 h4' }, 'Hints'),
           used ? h('span', { class: 'badge' }, used + ' used') : null),
         list,
-        h('div', { class: 'row row-sm' },
+        dockHint() ? null : h('div', { class: 'row row-sm' },
           btn(label, { icon: 'tip', onClick: requestHint, focus: 'hint', kbd: P.virtual ? '?' : 'H', disabled: (lvl >= 3 && !more) || !hintAllowed() })),
         lvl >= 3 && !more && !P.virtual && !P.timed ? h('p', { class: 'xsmall subtle m-0' }, 'Stuck on the next piece? Press I’m lost and show me your cube for fresh hints.') : null);
+    }
+
+    // Is the Hint button in the phone dock (rather than in the hint card)?
+    function dockHint() {
+      if (!S.actions || S.phase !== 'solving') return false;
+      if (P.timed) return false;
+      if (P.virtual) return S.level <= 1;
+      return S.level <= 1 && S.gate !== 'rescan';
     }
 
     function exactMoves(ht) {
@@ -1091,7 +1297,9 @@
         h('p', { class: 'm-0' }, 'Start with a ', h('strong', null, 'SOLVED'), ' cube, ', UI.colourDot(top), ' ',
           h('strong', null, colourName(top) + ' on top'), ', ', UI.colourDot('G'), ' ', h('strong', null, 'GREEN facing you'),
           ', then do these ' + n + ' moves.'),
-        h('p', { class: 'small muted m-0' }, 'Do them one at a time. Press Space (or Next move) after each one and the cube on screen copies you, so you can check you’re in step.'),
+        h('p', { class: 'small muted m-0' }, touchOnly()
+          ? 'Do them one at a time. Tap Next move after each one and the cube on screen copies you, so you can check you’re in step.'
+          : 'Do them one at a time. Press Space (or Next move) after each one and the cube on screen copies you, so you can check you’re in step.'),
         drill ? h('p', { class: 'small m-0' }, 'This leaves everything before ' + theStage(P.stage) + ' already done, so you can practise just that stage.') : null,
         h('div', { class: 'row row-sm' },
           btn('Ready — my cube matches', { cls: 'btn-primary', icon: 'check', onClick: setupReady, focus: 'ready', kbd: 'Enter' }),
@@ -1101,10 +1309,16 @@
       if (P.timed) {
         ui.panel.appendChild(h('section', { class: 'card card-sm stack stack-sm' },
           h('h3', { class: 'h4 m-0' }, 'Then the clock'),
-          h('p', { class: 'small m-0' }, settings.inspection !== false
-            ? 'After Ready you get 15 seconds to look at the cube. Press Space to start the timer, and Space again to stop.'
-            : 'After Ready, press Space to start the timer and Space again to stop.'),
-          settings.splitTaps !== false && !drill ? h('p', { class: 'small muted m-0' }, 'Split taps are on: press Space as you finish each stage to time it.') : null));
+          h('p', { class: 'small m-0' }, touchOnly()
+            ? (settings.inspection !== false
+              ? 'After Ready you get 15 seconds to look at the cube. Tap Start solving to start the timer, and Stop when it’s solved.'
+              : 'After Ready, tap Start timer to start and Stop when it’s solved.')
+            : (settings.inspection !== false
+              ? 'After Ready you get 15 seconds to look at the cube. Press Space to start the timer, and Space again to stop.'
+              : 'After Ready, press Space to start the timer and Space again to stop.')),
+          settings.splitTaps !== false && !drill ? h('p', { class: 'small muted m-0' }, touchOnly()
+            ? 'Split taps are on: tap the big button as you finish each stage to time it.'
+            : 'Split taps are on: press Space as you finish each stage to time it.') : null));
         return;
       }
       var ids = drill ? [P.stage] : STAGE_IDS;
@@ -1131,14 +1345,16 @@
 
     function timerLabel() {
       var cur = stageObj();
+      var tap = touchOnly() || S.docked;
       if (S.phase === 'ready') {
         if (P.virtual) return settings.inspection !== false ? 'Inspect the cube — the timer starts with your first turn' : 'The timer starts with your first turn';
+        if (tap) return settings.inspection !== false ? 'Tap Start inspection to get 15 seconds to look at the cube' : 'Tap Start timer when you’re ready';
         return settings.inspection !== false ? 'Press Space to start 15 seconds of inspection' : 'Press Space to start the timer';
       }
-      if (S.phase === 'inspect') return P.virtual ? 'Inspection — the timer starts with your first turn' : 'Inspection — press Space to start the timer';
+      if (S.phase === 'inspect') return P.virtual ? 'Inspection — the timer starts with your first turn' : tap ? 'Inspection — tap Start solving to start the timer' : 'Inspection — press Space to start the timer';
       if (P.virtual) return cur ? 'Now: ' + stageMeta(cur.id).name : '';
-      if (settings.splitTaps !== false && P.source !== 'drill' && cur) return 'Now: ' + stageMeta(cur.id).name + ' — Space when it’s done';
-      return 'Press Space to stop';
+      if (settings.splitTaps !== false && P.source !== 'drill' && cur) return 'Now: ' + stageMeta(cur.id).name + (tap ? ' — tap “' + stageMeta(cur.id).short + ' done” when it’s done' : ' — Space when it’s done');
+      return tap ? 'Tap Stop the moment it’s solved' : 'Press Space to stop';
     }
 
     function renderTimedCard() {
@@ -1151,7 +1367,7 @@
     function panelTimed() {
       var cur = stageObj();
       var phase = S.phase;
-      if (P.virtual && (phase === 'ready' || phase === 'inspect' || phase === 'solving')) ui.panel.appendChild(bigTimerCard(true));
+      if (P.virtual && !S.actions && (phase === 'ready' || phase === 'inspect' || phase === 'solving')) ui.panel.appendChild(bigTimerCard(true));
       var doneList = STAGE_IDS.filter(function (id) { return S.rec[id] && S.rec[id].done; });
       var showTrack = P.virtual || settings.splitTaps !== false;
       ui.stage = phase === 'solving' && showTrack ? h('span', { class: 'tabular' }, UI.fmtTime(S.stageClock.ms())) : null;
@@ -1163,19 +1379,16 @@
         })) : null));
       var acts = h('div', { class: 'row row-sm' });
       if (!P.virtual) {
-        if (phase === 'ready') acts.appendChild(btn(settings.inspection !== false ? 'Start inspection' : 'Start timer', { cls: 'btn-primary btn-lg', icon: 'timer', onClick: timedSpace, focus: 'timed-main', kbd: 'Space' }));
-        else if (phase === 'inspect') acts.appendChild(btn('Start solving', { cls: 'btn-primary btn-lg', icon: 'play', onClick: timedSpace, focus: 'timed-main', kbd: 'Space' }));
-        else if (phase === 'solving') {
-          var splits = settings.splitTaps !== false && P.source !== 'drill' && cur && stageIndex(cur.id) < 7;
-          acts.appendChild(btn(splits ? stageMeta(cur.id).short + ' done' : 'Stop', { cls: 'btn-primary btn-lg', icon: splits ? 'check' : 'pause', onClick: timedSpace, focus: 'timed-main', kbd: 'Space' }));
-          if (splits) acts.appendChild(btn('Stop — solved', { icon: 'pause', onClick: stopTimed, focus: 'timed-stop' }));
-        }
+        if (!S.actions) (timedButtons(null) || []).forEach(function (b) { acts.appendChild(b); });
       } else if (phase === 'ready' || phase === 'inspect') {
         acts.appendChild(h('p', { class: 'small muted m-0' }, 'Whole-cube turns (x, y, z) don’t start the clock, so you can look around first.'));
       }
       if (phase === 'solving') acts.appendChild(btn('Give up (DNF)', { cls: 'btn-ghost', icon: 'x', onClick: dnf, focus: 'dnf' }));
-      ui.panel.appendChild(h('section', { class: 'card card-sm stack stack-sm', 'aria-label': 'Timer controls' }, acts,
-        !P.virtual ? h('p', { class: 'xsmall subtle m-0' }, 'Put the cube down, then use Space: start, ' + (settings.splitTaps !== false && P.source !== 'drill' ? 'tap as each stage finishes, ' : '') + 'stop.') : null));
+      var tapWord = touchOnly() || S.docked;
+      ui.panel.appendChild(h('section', { class: 'card card-sm stack stack-sm', 'aria-label': 'Timer controls' }, acts.firstChild ? acts : null,
+        !P.virtual ? h('p', { class: 'xsmall subtle m-0' }, tapWord
+          ? 'Put the cube down and use the big button' + (S.docked ? ' at the bottom of the screen' : '') + ': start, ' + (settings.splitTaps !== false && P.source !== 'drill' ? 'tap as each stage finishes, ' : '') + 'stop.'
+          : 'Put the cube down, then use Space: start, ' + (settings.splitTaps !== false && P.source !== 'drill' ? 'tap as each stage finishes, ' : '') + 'stop.') : null));
       if (phase === 'solving') {
         var hc = hintCard();
         if (hc) ui.panel.appendChild(hc);
@@ -1285,6 +1498,7 @@
 
     // ---------------------------------------------------------------- start
     function begin() {
+      awake(true);
       build();
       if (!Cube || !Solver) { showProblem(new Error('The cube solver didn’t load. Reload the page to try again.')); return; }
       renderHead();
@@ -2081,7 +2295,7 @@
           title: toGym ? 'Leave this solve for the gym?' : 'Leave this solve?',
           body: (done > 0 ? 'The solve is saved as not finished. The stages you finished still count toward your progress.' : 'The solve is saved as not finished.') +
             (toGym ? ' When the gym exercises feel easy, start a fresh middle-layer practice from there.' : ''),
-          actions: [{ label: go, danger: true }, { label: 'Keep going', primary: true }]
+          actions: [{ label: go, danger: !toGym }, { label: 'Keep going', primary: true }]
         }).then(function (l) {
           resumeClocks();
           if (l === go && !destroyed && !S.finished) {
@@ -2119,6 +2333,7 @@
       }
       S.totalMs = Math.round(S.total.ms());
       S.phase = 'done';
+      awake(false);
       stopTicker();
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = 0; }
       try { S.result = record(!!completed); } catch (e) { console.error('[CC solve] recording failed', e); S.result = { completed: !!completed, totalMs: S.totalMs, stages: [], changes: [], milestones: [], quiz: { right: 0, total: 0 } }; }
@@ -2180,6 +2395,9 @@
       return res;
     }
 
+    // A new view (the summary, a problem card) starts at the top of the page, not where the solve left off.
+    function toTop() { try { if (root.scrollTo) root.scrollTo(0, 0); } catch (e) { /* ignore */ } }
+
     function milestoneInfo(id) {
       var list = (Lessons && Lessons.MILESTONES) || [];
       for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
@@ -2215,7 +2433,10 @@
             h('td', { class: 'cc-solve-col-bar' }, ms != null ? h('div', { class: 'cc-solve-bar', 'aria-hidden': 'true' }, h('span', { style: { width: Math.max(3, Math.round(ms / maxMs * 100)) + '%' } })) : null));
         }))) : h('p', { class: 'muted m-0' }, 'No stages finished this time.');
 
-      var changes = r.changes.map(function (c) {
+      // With a fixed help level in Settings the next solve won't follow these changes: say so once.
+      var fixedLvl = isLevel(settings.guidanceOverride) && !P.timed ? settings.guidanceOverride : null;
+      var changes = fixedLvl !== null ? (r.changes.length ? [UI.callout('info', 'Your progress is saved',
+        'You chose ' + LEVEL_NAMES[fixedLvl] + ' help for every stage in Settings, so that’s the help you’ll keep getting. Switch back to Automatic and the help will follow how well you know each stage.')] : []) : r.changes.map(function (c) {
         var name = stageMeta(c.id).name, o = c.out;
         return o.promoted
           ? UI.callout('success', name + ' graduated to ' + LEVEL_NAMES[o.level], 'Well done — ' + NEXT_TIME[o.level])
@@ -2255,6 +2476,7 @@
         miles.length ? h('section', { class: 'stack stack-sm', 'aria-label': 'Milestones' }, miles) : null,
         actions);
       el.appendChild(wrap);
+      toTop();
       // Focus the heading, not the "again" button: the Space that finished a real-cube solve (or one
       // pressed out of rhythm right after) must not start a new solve before the summary is seen.
       var sumTitle = wrap.querySelector('#cc-solve-sum-title');
@@ -2272,8 +2494,10 @@
 
     // ---------------------------------------------------------------- problem cards
     function problemCard(kind, title, text, buttons) {
+      awake(false);
       teardownCube();
       UI.empty(el);
+      toTop();
       el.appendChild(h('section', { class: 'card stack cc-solve-summary', role: kind === 'danger' ? 'alert' : null },
         h('h1', { class: 'h2 m-0' }, title),
         typeof text === 'string' ? h('p', { class: 'muted m-0' }, text) : text,
@@ -2443,7 +2667,9 @@
           toast('Your unfinished solve was saved.');
         } catch (e) { console.error(e); }
       }
+      awake(false);
       destroyed = true;
+      unwatchLayout();
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('keyup', onKeyUp, true);
       timeouts.forEach(function (id) { clearTimeout(id); });

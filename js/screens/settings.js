@@ -4,8 +4,10 @@
  *   theme ('light'|'dark'|null = follow the computer; applied by CC.App.applyTheme), animSpeed,
  *   anticipate (pause-and-predict quizzes), guidanceOverride (null = automatic, or 0..3),
  *   directCross (skip the daisy; for the solve screen to pass to CC.Solver.solve as opts.directCross),
- *   keyboard ('simple'|'cstimer', with the CC.Keys.legend key map), mirror, autoCapture,
- *   cameraId / cameraLabel (preferred camera; null = browser default), inspection, splitTaps,
+ *   keyboard ('simple'|'cstimer', with the CC.Keys.legend key map), mirror (front camera only), autoCapture,
+ *   cameraFacing (null = automatic: rear on phones, front elsewhere | 'environment' | 'user'; picking one
+ *   clears cameraId, which would otherwise win), cameraId / cameraLabel (preferred camera; null = browser
+ *   default; a name that says front/back also sets cameraFacing), inspection, splitTaps,
  *   goalSeconds, welcomeDismissed (home welcome card).
  * Plus: export a JSON backup, import one (CC.Store.importJSON), reset everything, about & privacy.
  * On your phone: the hosted link (CC.App.HOSTED_URL) with Copy/Share, Add to Home Screen steps for
@@ -20,6 +22,8 @@
   var STYLE_ID = 'cc-style-settings';
   var CSS = [
     '.cc-settings .card > .card__head { margin-bottom: var(--space-2); }',
+    // the section chips scroll a section to the top: keep its heading clear of the sticky top bar
+    '.cc-settings > section { scroll-margin-top: calc(var(--topbar-h) + env(safe-area-inset-top, 0px) + var(--space-3)); }',
     '.cc-set-jump { display: flex; flex-wrap: wrap; gap: 6px; }',
     '.cc-set-block { padding: var(--space-4) 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-3); }',
     '.cc-set-block:last-child { border-bottom: 0; padding-bottom: 0; }',
@@ -45,13 +49,14 @@
     '.cc-speed output { flex: none; width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: var(--text-sm); }',
     '.cc-cam { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: flex-end; }',
     '.cc-cam .select { max-width: 260px; }',
+    '@media (max-width: 520px) { .setting-row__control:has(> .cc-cam) { flex: 1 1 100%; } .cc-cam { width: 100%; justify-content: flex-start; } .cc-cam .select { flex: 1 1 180px; max-width: none; } }',
     '.cc-data-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }',
     '.cc-about p { margin: 0; }',
     '.cc-about ul { margin: 0; padding-left: 1.2em; color: var(--text-2); }',
     '.cc-about li + li { margin-top: var(--space-2); }',
     // On your phone
     '.cc-link { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }',
-    '.cc-link__url { flex: 1 1 260px; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--border-strong); background: var(--surface-2); font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; color: var(--text); overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }',
+    '.cc-link__url { flex: 1 1 260px; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--border-strong); background: var(--surface-2); font-family: var(--font-mono); font-size: min(var(--text-sm), 3.25vw); font-weight: 600; color: var(--text); overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }',
     '.cc-link__btns { display: flex; flex-wrap: wrap; gap: var(--space-2); }',
     '.cc-qr { display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: center; margin: 0; }',
     '.cc-qr img { flex: none; width: 148px; height: 148px; border-radius: 10px; border: 1px solid var(--border); background: #fff; image-rendering: pixelated; }',
@@ -80,6 +85,7 @@
     '.cc-move-step p { margin: 0; }',
     'textarea.cc-code { font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.35; overflow-wrap: anywhere; word-break: normal; min-height: 6.2em; resize: vertical; }',
     '@media (pointer: coarse) { textarea.cc-code { font-size: 16px; } }',
+    'textarea.cc-code::placeholder { font-family: var(--font); letter-spacing: 0; }',
     '.cc-move-status { margin: 0; font-size: var(--text-sm); color: var(--text-2); }',
     '.cc-move-status.is-ok { color: var(--success-text); font-weight: 600; }',
     '.cc-move-status.is-err { color: var(--danger-text); }',
@@ -308,9 +314,56 @@
           settings.cameraId = v || null;
           var opt = e.target.options[e.target.selectedIndex];
           settings.cameraLabel = v && opt ? opt.textContent : null;
+          // a camera whose name says which way it faces ("Back Camera", "FaceTime HD Camera") also sets
+          // "Camera on a phone", so the scan instructions and the mirroring follow it (as the scan screen does)
+          var f = facingFromLabel(settings.cameraLabel);
+          if (f) { settings.cameraFacing = f; syncFacing(); }
           save();
         }
       });
+      function facingFromLabel(label) {
+        if (!label) return null;
+        var S = CC.Scanner;
+        if (!/back|rear|front|facetime|user|environment|selfie/i.test(label)) return null;
+        var f = S && S.guessFacing ? S.guessFacing(null, label, null) : (/back|rear|environment/i.test(label) ? 'environment' : 'user');
+        return f === 'environment' || f === 'user' ? f : null;
+      }
+
+      // Which camera a phone starts with (settings.cameraFacing: null = automatic, 'environment' = back,
+      // 'user' = front). The scan screen remembers the learner's "Switch camera" choice here too.
+      var FACINGS = [
+        [null, 'Automatic', 'The back camera on a phone or tablet, so you can point it at the cube. The front camera on a laptop.'],
+        ['environment', 'Back camera', 'Point the phone at the cube, like taking a photo. The picture is never mirrored.'],
+        ['user', 'Front (selfie) camera', 'Hold the cube up to the screen, like a video call.']
+      ];
+      function facingNow() { return settings.cameraFacing === 'user' || settings.cameraFacing === 'environment' ? settings.cameraFacing : null; }
+      var facingNote = h('p', { class: 'small muted m-0', 'aria-live': 'polite' });
+      var facingInputs = [];
+      var facingList = h('fieldset', { class: 'cc-radio-list' },
+        h('legend', { class: 'sr-only' }, 'Camera on a phone'),
+        FACINGS.map(function (o) {
+          var input = h('input', {
+            type: 'radio', name: 'cc-facing', value: o[0] || 'auto', checked: facingNow() === o[0],
+            onChange: function (e) {
+              if (!e.target.checked) return;
+              settings.cameraFacing = o[0];
+              // a remembered camera (picked by name) would win over this choice, so let it go
+              var hadCamera = !!settings.cameraId;
+              settings.cameraId = null; settings.cameraLabel = null;
+              if (hadCamera) { camSelect.value = ''; }
+              save();
+              facingNote.textContent = hadCamera ? '“Camera to use” is back to Browser default, so this choice is the one that counts.' : '';
+            }
+          });
+          facingInputs.push(input);
+          return h('label', { class: 'cc-radio' }, input,
+            h('span', null, h('span', { class: 'cc-radio__title' }, o[1], o[0] == null ? [' ', h('span', { class: 'badge badge-accent' }, 'Recommended')] : null),
+              h('span', { class: 'cc-radio__desc' }, o[2])));
+        }));
+      function syncFacing() {
+        var f = facingNow();
+        facingInputs.forEach(function (inp) { inp.checked = (inp.value === 'auto' ? null : inp.value) === f; });
+      }
       var camHint = h('p', { class: 'small muted m-0', 'aria-live': 'polite' });
       function fillCameras(list) {
         if (disposed) return;
@@ -327,7 +380,7 @@
             ? 'Your browser hides camera names until you’ve allowed the camera once. Scan your cube once, then come back and pick one here.'
             : 'No camera found. Plug one in (or allow camera access), then press “Find cameras”.';
         } else {
-          camHint.textContent = named.length === 1 ? 'One camera found.' : named.length + ' cameras found. Pick the one that faces you.';
+          camHint.textContent = named.length === 1 ? 'One camera found.' : named.length + ' cameras found. Pick the one you want to use, or leave it on Browser default.';
         }
       }
       function findCameras() {
@@ -806,10 +859,16 @@
               legendHost))),
 
         section('camera', 'Camera', 'Used only to read the colours of your cube when you scan it.',
-          row('Mirror the camera', 'Show the picture like a mirror, which is easier to follow while you turn the cube.', toggle('mirror')),
+          h('div', { class: 'cc-set-block' },
+            h('div', null,
+              h('div', { class: 'setting-row__title' }, 'Camera on a phone'),
+              h('div', { class: 'setting-row__desc' }, 'Which camera to start with when you scan. You can also switch while scanning with the “Switch camera” button.')),
+            facingList,
+            facingNote),
+          row('Mirror the camera', 'Only for a front (selfie) camera: show the picture like a mirror, which is easier to follow while you turn the cube. The back camera’s picture is never mirrored.', toggle('mirror')),
           row('Capture faces automatically', 'Grab each face as soon as you hold it steady. Turn off to press a button for each face instead.', toggle('autoCapture')),
           h('div', { class: 'cc-set-block' },
-            row('Camera to use', 'Handy if your device has more than one.', camCtl),
+            row('Camera to use', 'Handy on a laptop with more than one camera. On a phone, use “Camera on a phone” above instead.', camCtl),
             camHint)),
 
         section('timer', 'Timer & goal', null,

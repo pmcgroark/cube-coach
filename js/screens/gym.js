@@ -32,7 +32,7 @@
 
   function progressOf(entry) {
     var G = CC().Gym;
-    if (!isObj(entry)) return { tried: false, recentRight: 0, recentN: 0, pct: 0, strong: false, bestMs: null, total: 0, streak: 0 };
+    if (!isObj(entry)) return { tried: false, recentRight: 0, recentN: 0, pct: 0, strong: false, bestMs: null, bestRoundMs: null, total: 0, streak: 0 };
     var rec = Array.isArray(entry.recent) ? entry.recent.slice(-10) : [];
     var right = rec.reduce(function (a, x) { return a + (x ? 1 : 0); }, 0);
     var total = Number(entry.total) || 0;
@@ -41,8 +41,15 @@
       pct: rec.length ? Math.round(right / rec.length * 100) : 0,
       strong: G && G.isStrong ? !!G.isStrong(entry) : right >= 8,
       bestMs: entry.bestMs != null && isFinite(entry.bestMs) ? Number(entry.bestMs) : null,
+      bestRoundMs: Number(entry.bestRoundMs) > 0 ? Number(entry.bestRoundMs) : null,
       total: total, streak: Number(entry.streak) || 0
     };
+  }
+  // A missed question in the end-of-round list. Many drills ask the same question every time ("Tap
+  // every top edge…"), so the list names the question number and says what was on that cube instead.
+  function missText(r, i) {
+    var lead = r && r.lead ? String(r.lead) : '', ex = r && r.explain ? String(r.explain) : '';
+    return { title: 'Question ' + (i + 1), text: (lead && ex.indexOf(lead) !== 0 ? lead + ' ' : '') + ex };
   }
 
   // The cube held yellow up, green in front (so two states can be compared however they are held).
@@ -106,7 +113,46 @@
     if (k) out = out.concat(k.stickers);
     return out.length ? out : null;
   }
+  function cap1(t) { t = String(t || ''); return t.charAt(0).toUpperCase() + t.slice(1); }
   function isMoveLabel(s) { return typeof s === 'string' && /^[URFDLBMESxyz](?:'|2)?$/.test(s); }
+
+  // Which way the 3D camera looks. From the default front-right view the left side and the back are
+  // hidden, so the Left algorithm's moves (and its corner, white facing left) and a stuck back slot
+  // could not be seen. phase: 'ask' (the question), 'show' (Show me), 'perform' (doing it).
+  var VIEW_AZ = { right: 34, left: -34, 'back-right': 146, 'back-left': -146 };   // degrees round from the front
+  var VIEW_EL = 27;
+  var SLOT_VIEW = { FR: 'right', FL: 'left', BL: 'back-left', BR: 'back-right' };
+  var SLOT_STK = { FR: [23, 12], FL: [21, 41], BL: [50, 39], BR: [48, 14] };
+  var VIEW_WORDS = { left: 'Seen from the front-left', 'back-left': 'Seen from the back-left', 'back-right': 'Seen from the back-right' };
+  function viewFor(item, phase) {
+    if (!item) return 'right';
+    var id = item.drillId, side = item.alg === 'left' ? 'left' : 'right';
+    if (id === 'stuck-fix') return phase === 'ask' ? SLOT_VIEW[item.slot] || 'right' : 'right';   // doing it: as the cube is held
+    if (id === 'decide') return phase === 'show' ? side : 'right';   // looking left while asking would give the answer away
+    if (id === 'lineup' || id === 'stuck-spot' || id === 'sprint' || id === 'spot' || id === 'mirror') return 'right';
+    return side;
+  }
+  // The direction the camera looks from (unit vector, CC.Cube axes: x right, y up, z front).
+  function viewDir(side) {
+    var az = (VIEW_AZ[side] != null ? VIEW_AZ[side] : VIEW_AZ.right) * Math.PI / 180, el = VIEW_EL * Math.PI / 180;
+    return [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];
+  }
+  // A View3D orbits 0.0085 radians per pixel of sideways drag: the drag that turns one view into another.
+  var ORBIT_RAD_PER_PX = 0.0085;
+  function orbitPx(from, to) {
+    var d = (VIEW_AZ[from] != null ? VIEW_AZ[from] : 34) - (VIEW_AZ[to] != null ? VIEW_AZ[to] : 34);
+    while (d > 180) d -= 360;
+    while (d <= -180) d += 360;
+    return d * Math.PI / 180 / ORBIT_RAD_PER_PX;
+  }
+  // Where a middle slot ends up after a whole-cube rotation (null if it leaves the middle layer).
+  function slotAfter(slot, tok) {
+    var C = Cube(), st = SLOT_STK[slot];
+    if (!st || !C) return null;
+    var i = safe(function () { return C.stickerAfter(st[0], tok); }, null), out = null;
+    Object.keys(SLOT_STK).forEach(function (k) { if (SLOT_STK[k].indexOf(i) !== -1) out = k; });
+    return out;
+  }
 
   // ================================================================== styles
   var STYLE_ID = 'cc-style-gym';
@@ -201,13 +247,18 @@
     '.gy .gy-view.gy-view--big { aspect-ratio: 1 / 0.92; max-height: 50vh; max-height: 50dvh; }',
     '@media (max-width: 520px) { .gy .gy-view.gy-view--big { aspect-ratio: 1 / 0.72; max-height: 36vh; max-height: 36dvh; } }',
     '@media (max-width: 520px) { .gy .gy-view.gy-view--small { aspect-ratio: 1 / 0.6; max-height: 30vh; max-height: 30dvh; } }',
+    '@media (max-width: 520px) and (max-height: 700px) { .gy .gy-view.gy-view--small { max-height: 25vh; max-height: 25dvh; } }',
     '.gy-cap { grid-column: 1 / -1; margin: 0; min-height: 1.45em; font-size: var(--text-sm); color: var(--text-2); text-align: center; line-height: 1.45; }',
     '.gy-cap:empty { display: none; }',
     '.gy-cap .mono { font-weight: 800; color: var(--text); }',
     '.gy-top { display: flex; justify-content: center; min-width: 0; }',
     '.gy-top .cc-tv { width: min(100%, 340px); }',
     '.gy-stage.is-both .gy-top .cc-tv { width: 100%; }',
-    '.gy-stage.is-both .gy-top .cc-tv__cap { display: none; }',
+    '.gy-stage.is-both .gy-top .cc-tv__cap { font-size: 0.72rem; line-height: 1.25; }',
+    /* which way the camera looks, and notes about the moves, sit on the 3D view itself so nothing below jumps */
+    '.gy-viewtag { position: absolute; top: 8px; left: 8px; z-index: 2; padding: 3px 9px; border-radius: 99px; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); font-size: var(--text-xs); font-weight: 700; line-height: 1.3; pointer-events: none; box-shadow: var(--shadow-1); }',
+    '.gy-ovl { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; margin: 0; padding: 8px 12px; border-radius: var(--radius-sm); background: linear-gradient(var(--warn-soft), var(--warn-soft)), var(--surface); border: 1px solid var(--warn-border); color: var(--text); font-size: var(--text-sm); font-weight: 600; line-height: 1.35; pointer-events: none; box-shadow: var(--shadow-1); }',
+    '.gy-pill .icon { flex: none; }',
     '.gy-pics { display: grid; gap: var(--space-2); grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; }',
     '.gy-pics--1 { grid-template-columns: minmax(0, 1fr); justify-items: center; }',
     '.gy-pic { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; padding: 12px 8px 10px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: radial-gradient(90% 80% at 50% 38%, var(--stage-glow) 0%, var(--stage-bg) 100%); }',
@@ -319,11 +370,13 @@
     '  .gy .gy-view { aspect-ratio: 1 / 0.9; max-height: 64vh; }',
     '  .gy .gy-view.gy-view--big { aspect-ratio: 1 / 0.95; max-height: 66vh; }',
     '  .gy-pic .cc-iso svg { max-width: 220px; }',
+    '  .gy-pics--small .gy-pic { width: min(100%, 320px); } .gy-pics--small .gy-pic .cc-iso svg { max-width: 210px; }',
     '}',
     '@media (orientation: landscape) and (max-height: 500px) and (min-width: 600px) {',
     '  .gy-run__body { column-gap: var(--space-4); }',
     '  .gy .gy-view, .gy .gy-view.gy-view--big, .gy .gy-view.gy-view--small { aspect-ratio: 1 / 0.9; max-height: calc(100vh - var(--topbar-h, 48px) - 96px); max-height: calc(100dvh - var(--topbar-h, 48px) - 96px); }',
     '  .gy-pic .cc-iso svg { max-width: 130px; }',
+    '  .gy-pics--small .gy-pic .cc-iso svg { max-width: 110px; }',
     '  .gy-top .cc-tv { width: min(100%, calc(100dvh - var(--topbar-h, 48px) - 70px)); }',
     '  .gy-q { font-size: var(--text-md); }',
     '}'
@@ -360,7 +413,6 @@
     }
   };
 
-  var GROUP_ORDER = [2, 1, 3, 4];             // the learner's own order: remembering first
   var nav = { fromHub: false };               // a round opened from the hub closes with Back
   var PRAISE = ['Right!', 'Yes!', 'Spot on.', 'Correct.', 'That’s it.'];
 
@@ -386,7 +438,8 @@
       function animSpeed() { var s = Number(settings().animSpeed); return s > 0 && s < 10 ? s : 1; }
       function save() { try { App.save(); } catch (e) { /* the shell reports save errors */ } }
       function active() { try { App.markActive(); } catch (e) { /* ignore */ } }
-      function awake(on) { try { if (typeof App.keepAwake === 'function') App.keepAwake(!!on); } catch (e) { /* ignore */ } }
+      // Reason-counted, so switching it off here never switches off a solve or scan underneath.
+      function awake(on) { try { if (typeof App.keepAwake === 'function') App.keepAwake(!!on, 'gym'); } catch (e) { /* ignore */ } }
       function moveText(t) { return safe(function () { return Cube().moveInfo(t).text; }, ''); }
       function fmt(ms) { return UI.fmtTime(ms); }
       function btn(label, iconName, onClick, cls, attrs) {
@@ -437,7 +490,7 @@
         if (sd) page.appendChild(suggestCard(sd, sug));
         page.appendChild(algCard());
         var groups = h('div', { class: 'gy-groups' });
-        GROUP_ORDER.forEach(function (gid) { groups.appendChild(groupCard(gid, gym, sug)); });
+        (G.PRIORITY || [2, 1, 3, 4]).forEach(function (gid) { groups.appendChild(groupCard(gid, gym, sug)); });
         page.appendChild(groups);
         page.appendChild(groupCard(5, gym, sug));
         el.appendChild(page);
@@ -490,10 +543,10 @@
       function drillRow(x, gym, sug) {
         var p = progressOf(gym[x.id]), isNext = !!sug && sug.drillId === x.id;
         var where = x.needsCube === 'real' ? 'With your real cube' : x.needsCube === 'virtual' ? 'On the virtual cube' : 'Just tap';
-        var timed = x.id === 'leftright' || x.id === 'sprint';
         var meta = x.kind === 'route' ? 'Opens a coached solve'
           : !p.tried ? 'Not tried yet'
-            : p.recentRight + ' of your last ' + p.recentN + ' right' + (timed && p.bestMs != null ? ' · best ' + fmt(p.bestMs) + ' s' : '');
+            : p.recentRight + ' of your last ' + p.recentN + ' right' +
+              (x.id === 'leftright' && p.bestRoundMs != null ? ' · best round ' + fmt(p.bestRoundMs) + ' s' : x.id === 'sprint' && p.bestMs != null ? ' · best ' + fmt(p.bestMs) + ' s' : '');
         return h('button', {
           type: 'button', class: ['gy-drill', p.strong ? 'is-strong' : null, isNext ? 'is-next' : null],
           onClick: function () { start(x); },
@@ -567,7 +620,8 @@
         // ---- skeleton
         var countEl = h('p', { class: 'gy-run__count' });
         var streakEl = h('span', { class: 'gy-pill gy-pill--streak', 'aria-live': 'polite' });
-        var timerEl = h('span', { class: 'gy-pill gy-pill--timer', role: 'timer', 'aria-live': 'off', hidden: true });
+        var timerTxt = h('span', null);
+        var timerEl = h('span', { class: 'gy-pill gy-pill--timer', role: 'timer', 'aria-live': 'off', 'aria-label': 'Time', hidden: true }, UI.icon('timer', 14), timerTxt);
         var dotsEl = h('ol', { class: 'gy-dots', 'aria-label': 'Progress through the round' });
         var head = h('div', { class: 'gy-run__head' },
           h('button', { type: 'button', class: 'btn btn-ghost btn-icon', 'aria-label': 'Leave this round', title: 'Leave this round', onClick: leave }, UI.icon('arrowLeft', 20)),
@@ -592,6 +646,62 @@
 
         var view = makeView(viewWrap);
         scope.add(function () { if (ticker) clearInterval(ticker); ticker = 0; if (iscope) iscope.dispose(); });
+
+        // ---- which way the camera looks (see viewFor)
+        // A View3D with setView(side) is asked directly. Older ones only have resetCamera() (back to
+        // the front-right) and a drag to orbit, so the camera is turned with a short synthetic sideways
+        // drag on the empty corner of the canvas. We remember where we left it; once the learner
+        // touches the cube (and may have turned it) we go back to the default view first.
+        var cam = { side: 'right', known: true, running: false, queued: null };
+        var viewTag = h('span', { class: 'gy-viewtag', hidden: true });
+        viewWrap.appendChild(viewTag);
+        if (view && view.el && view.el.addEventListener) {
+          var touched = function (e) { if (e && e.isTrusted) cam.known = false; };
+          view.el.addEventListener('pointerdown', touched);
+          scope.add(function () { try { view.el.removeEventListener('pointerdown', touched); } catch (e) { /* ignore */ } });
+        }
+        function lookFrom(side) {
+          side = VIEW_AZ[side] != null ? side : 'right';
+          viewTag.hidden = !VIEW_WORDS[side];
+          viewTag.textContent = VIEW_WORDS[side] || '';
+          if (!view) return;
+          if (typeof view.setView === 'function') {
+            try { view.setView(side); cam.side = side; cam.known = true; return; } catch (e) { /* fall back below */ }
+          }
+          if (cam.running) { cam.queued = side; return; }
+          if (cam.known && cam.side === side) return;
+          if (!cam.known) {
+            try { view.resetCamera(); } catch (e) { /* ignore */ }
+            cam.known = true; cam.side = 'right';
+            if (side === 'right') return;
+            cam.running = true;   // resetCamera() glides back for 480 ms: turn once it has arrived
+            setTimeout(function () { cam.running = false; var q = cam.queued || side; cam.queued = null; if (!scope.dead) lookFrom(q); }, 520);
+            return;
+          }
+          orbit(cam.side, side);
+        }
+        function orbit(from, to) {
+          var px = orbitPx(from, to), cv = view && view.el;
+          cam.side = to; cam.known = true;
+          if (!px || !cv || typeof root.PointerEvent !== 'function' || !cv.getBoundingClientRect) return;
+          var r = cv.getBoundingClientRect(), x0 = r.left + 2, y0 = r.top + 2, steps = UI.reducedMotion() ? 1 : 9, i = 0;
+          function fire(type, x) {
+            try {
+              cv.dispatchEvent(new root.PointerEvent(type, { pointerId: 9173, pointerType: 'mouse', isPrimary: true, button: 0,
+                buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y0, bubbles: true, cancelable: true }));
+            } catch (e) { /* ignore */ }
+          }
+          cam.running = true;
+          fire('pointerdown', x0);
+          (function move() {   // always runs to the end, so the view is never left mid-drag
+            i++;
+            fire('pointermove', x0 + px * i / steps);
+            if (i < steps) { setTimeout(move, 24); return; }
+            fire('pointerup', x0 + px);
+            cam.running = false;
+            if (cam.queued && !scope.dead) { var q = cam.queued; cam.queued = null; lookFrom(q); }
+          })();
+        }
 
 
         // ---- 3D view and animation
@@ -698,7 +808,7 @@
           items.forEach(function () { dotsEl.appendChild(h('li')); });
           timerMode = d.id === 'leftright' ? 'round' : d.id === 'sprint' ? 'item' : null;
           timerEl.hidden = !timerMode;
-          timerEl.textContent = timerMode ? fmt(0) : '';
+          timerTxt.textContent = timerMode ? fmt(0) : '';
           if (timerMode === 'round') startTicker();
           awake(true);
           showItem();
@@ -706,8 +816,8 @@
         function startTicker() {
           if (ticker) return;
           ticker = setInterval(function () {
-            if (timerMode === 'round') timerEl.textContent = fmt(now() - roundT0);
-            else if (timerMode === 'item' && sprintT0 != null && !settled) timerEl.textContent = fmt(now() - sprintT0);
+            if (timerMode === 'round') timerTxt.textContent = fmt(now() - roundT0);
+            else if (timerMode === 'item' && sprintT0 != null && !settled) timerTxt.textContent = fmt(now() - sprintT0);
           }, 100);
         }
         function stopTicker() { if (ticker) clearInterval(ticker); ticker = 0; }
@@ -736,14 +846,15 @@
           [extraEl, answerEl, fbEl, topEl, picsEl, capEl].forEach(function (x) { UI.empty(x); });
           picsEl.className = 'gy-pics';
           viewWrap.classList.remove('gy-view--big', 'gy-view--small');
-          if (item.drillId === 'slowmo') viewWrap.classList.add('gy-view--small');
+          // a smaller cube on phones where the answers would otherwise slip under the tab bar
+          if (item.drillId === 'slowmo' || item.drillId === 'nextmove' || item.drillId === 'stuck-spot') viewWrap.classList.add('gy-view--small');
           if (view) {
             view.setTurnable(false);
             view.onUserMove = null;
             show3d(item.state, item.highlight);
-            try { view.resetCamera(); } catch (e) { /* ignore */ }
           }
-          if (timerMode === 'item') { timerEl.textContent = fmt(0); startTicker(); }
+          lookFrom(viewFor(item, 'ask'));
+          if (timerMode === 'item') { timerTxt.textContent = fmt(0); startTicker(); }
           updateHead();
           setPrompt(item.prompt);
           var r = RENDER[item.drillId] || renderTap;
@@ -761,16 +872,18 @@
           settled = true;
           o = o || {};
           var ms = o.ms != null ? o.ms : now() - itemT0;
-          var timed = d.id === 'leftright' || d.id === 'sprint';
-          results[idx] = { correct: !!correct, item: item, ms: ms, explain: explain };
+          results[idx] = { correct: !!correct, item: item, ms: ms, explain: explain, lead: o.lead || null };
           streak = correct ? streak + 1 : 0;
           bestStreak = Math.max(bestStreak, streak);
           var dd = data(), before = progressOf(dd && dd.gym ? dd.gym[d.id] : null).strong;
-          safe(function () { G.record(dd, d.id, !!correct, timed && correct ? { ms: ms } : {}); });
+          // a sprint's time is one whole middle layer; Left-or-right keeps its best perfect round instead (summary)
+          safe(function () { G.record(dd, d.id, !!correct, d.id === 'sprint' && correct ? { ms: ms } : {}); });
           save();
           active();
-          var after = progressOf(dd && dd.gym ? dd.gym[d.id] : null).strong;
-          if (after && !before) { try { App.toast('“' + d.name + '” is now Strong: 8 of your last 10 right.', { kind: 'success' }); } catch (e) { /* ignore */ } }
+          var pAfter = progressOf(dd && dd.gym ? dd.gym[d.id] : null);
+          if (pAfter.strong && !before) {
+            try { App.toast('“' + d.name + '” is now Strong: ' + pAfter.recentRight + ' of your last ' + pAfter.recentN + ' right.', { kind: 'success' }); } catch (e) { /* ignore */ }
+          }
           if (view) { view.setTurnable(false); view.onUserMove = null; }
           updateHead();
           renderFeedback(!!correct, explain, o);
@@ -810,6 +923,7 @@
           stopAnim();
           setMode(stageFor(item) === 'both' ? 'both' : '3d');
           if (!view) return;
+          lookFrom(viewFor(item, 'show'));
           view.setTurnable(false);
           var hl = from === item.state && item.highlight && item.highlight.length ? item.highlight : pieceHl(from, item.edge);
           show3d(from, hl);
@@ -876,6 +990,11 @@
           };
         }
         function note(ok, text) { return h('p', { class: ['gy-note', ok ? 'is-right' : 'is-wrong'], role: 'status' }, text); }
+        // check() on a step gives "<why the tap was wrong> <the step's explanation>": just the why
+        function whyOnly(res, st) {
+          var ex = res && res.explain ? String(res.explain) : '', tail = st && st.explain ? String(st.explain) : '';
+          return tail && ex.length > tail.length && ex.slice(-tail.length) === tail ? ex.slice(0, ex.length - tail.length).trim() : '';
+        }
 
         // ============================================================ renderers
         var RENDER = {
@@ -888,7 +1007,7 @@
         function renderTap() {
           var it = item, mode = stageFor(it);
           setMode(mode);
-          if (mode === 'both') topView(topEl, it.state, { highlight: it.highlight, size: 'fill', caption: false });
+          if (mode === 'both') topView(topEl, it.state, { highlight: it.highlight, size: 'fill', caption: 'From above, front at the bottom' });
           if (it.drillId === 'nextmove') {
             var A = G.ALGS[it.alg], k = (it.done || []).length;
             var sh = A.moves.map(function (t, i) { return i < k; });
@@ -959,12 +1078,16 @@
             hintEl.remove();
             var lead = null;
             if (res.partial) {
-              var P = res.partial, wordOf = function (p) { return p === 'none' ? '“None”' : 'the ' + (C.TopView.positions()[p] || { words: p }).words + ' edge'; };
+              var P = res.partial, place = function (p) { return (C.TopView.positions()[p] || { words: p }).words; };
+              var edges = function (list) {   // "the front edge", "the front and right edges"
+                var w = list.map(place);
+                return 'the ' + (w.length < 2 ? w[0] + ' edge' : w.slice(0, -1).join(', ') + ' and ' + w[w.length - 1] + ' edges');
+              };
               var bits = [], extra = P.extra.filter(function (x) { return x !== 'none'; });
               if (ans.indexOf('none') !== -1) bits.push('The answer was “None of them”.');
               else if (P.extra.indexOf('none') !== -1) bits.push('Not “None”: ' + (ans.length === 1 ? 'one top edge has' : ans.length + ' top edges have') + ' no yellow.');
-              else if (P.missed.length) bits.push('Missed: ' + P.missed.map(wordOf).join(', ') + '.');
-              if (extra.length) bits.push('Not a middle edge: ' + extra.map(wordOf).join(', ') + '.');
+              else if (P.missed.length) bits.push('You missed ' + edges(P.missed) + ': no yellow on ' + (P.missed.length > 1 ? 'them' : 'it') + '.');
+              if (extra.length) bits.push(cap1(edges(extra)) + (extra.length > 1 ? ' have' : ' has') + ' a yellow sticker, so ' + (extra.length > 1 ? 'they stay' : 'it stays') + ' in the top layer.');
               lead = bits.join(' ');
             }
             settle(res.correct, res.explain, { lead: lead });
@@ -1082,7 +1205,7 @@
                 else if (e.key === 'ArrowRight' || e.key === '2') { e.preventDefault(); lr.pick(1); }
               };
             } else {
-              topView(topEl, st.state, { highlight: st.highlight, size: 'fill', caption: false });
+              topView(topEl, st.state, { highlight: st.highlight, size: 'fill', caption: 'From above, front at the bottom' });
               var list = st.options.map(function (o) { return st.id === 'centre' ? { id: o.id, label: o.label, dot: o.id } : o; });
               var oc = options(list, function (id) { oc.mark(st.answer, id); answer(id); }, { cls: st.id === 'centre' ? 'gy-opts--colours' : null });
               answerEl.appendChild(oc.el);
@@ -1104,10 +1227,12 @@
             if (k === 3) {
               var all = G.check(it, resp);
               var right = resp.filter(function (x, i) { return x === it.steps[i].answer; }).length;
-              settle(all.correct, it.explain, { lead: all.correct ? 'All four decisions right.' : 'You got ' + right + ' of the 4 decisions right.' });
+              // a wrong last tap gets its own reason first (check() puts it there), then the whole decision
+              var lastWhy = res.correct ? '' : whyOnly(res, st);
+              settle(all.correct, (lastWhy ? lastWhy + ' ' : '') + it.explain, { lead: all.correct ? 'All four decisions right.' : 'You got ' + right + ' of the 4 decisions right.' });
               return;
             }
-            answerEl.appendChild(note(res.correct, (res.correct ? 'Yes. ' : 'Not quite. ') + st.explain));
+            answerEl.appendChild(note(res.correct, (res.correct ? 'Yes. ' : 'Not quite. ') + res.explain));
             var go = function () {
               if (scope.dead || settled) return;
               var mv = k === 1 ? parts.rot : k === 2 ? parts.turn : [];
@@ -1187,7 +1312,7 @@
               resp[k] = id;
               oc.mark(st.answer, id);
               s.mark(k, res.correct ? 'right' : 'fixed');
-              answerEl.appendChild(note(res.correct, (res.correct ? 'Yes: ' : 'It’s ') + st.explain));
+              answerEl.appendChild(note(res.correct, (res.correct ? 'Yes: ' : 'Not quite. ') + res.explain));
               keyHandler = null;
               playMoves([st.token], { onMove: function (i, t) { moveCaption(k, t, 8, st.word); } }).then(function (ok) {
                 if (!ok) return;
@@ -1255,8 +1380,9 @@
             var st = it.steps[k];
             slots.mark(k, res.correct ? 'right' : 'fixed');
             UI.empty(noteHost);
-            noteHost.appendChild(note(res.correct, res.correct ? st.explain : 'Not ' + tok + ': ' + st.explain));
             k++;
+            // the last move's note would only repeat the feedback card below
+            if (k < it.steps.length) noteHost.appendChild(note(res.correct, res.correct ? st.explain : 'Not ' + tok + '. ' + (whyOnly(res, st) || st.explain)));
             slots.current(k < it.steps.length ? k : -1);
             if (k >= it.steps.length) {
               pad.buttons.forEach(function (b) { b.disabled = true; });
@@ -1297,7 +1423,15 @@
             extraEl.appendChild(h('div', { class: 'gy-inline' }, h('span', { class: 'gy-hint' }, A.name), algS.el));
           }
           var mine = h('p', { class: 'gy-mine', 'aria-live': 'polite' });
-          var noteEl = h('p', { class: 'gy-note is-wrong', hidden: true, role: 'status' });
+          // on the cube itself: below the fold it was missed, and above the pad it would push the buttons about
+          var noteEl = h('p', { class: 'gy-ovl', hidden: true, role: 'status' });
+          viewWrap.appendChild(noteEl);
+          iscope.add(function () { if (noteEl.parentNode) noteEl.parentNode.removeChild(noteEl); });
+          var touch = safe(function () { return root.matchMedia('(pointer: coarse)').matches; }, false);
+          // stuck-fix: the camera goes back to the way the cube is held, and the caption says where the
+          // stuck slot has got to as the learner turns the whole cube
+          var slotNow = it.drillId === 'stuck-fix' ? it.slot : null;
+          if (o.view) lookFrom(o.view);
           var padHost = h('div');
           var pad = null;
           if (C.MovePad && typeof C.MovePad.render === 'function') {
@@ -1309,11 +1443,12 @@
           var checkB = btn('Check', 'check', checkNow, 'btn-secondary btn-sm');
           var giveB = btn(sprint ? 'Give up' : 'Show me', sprint ? 'x' : 'play', giveUp, 'btn-ghost btn-sm');
           answerEl.appendChild(h('div', { class: 'gy-perf' }, padHost,
-            h('div', { class: 'gy-ctrls' }, undoB, resetB, checkB, giveB), mine, noteEl,
+            h('div', { class: 'gy-ctrls' }, undoB, resetB, checkB, giveB), mine,
             h('p', { class: 'gy-kbd' }, settings().keyboard === 'cstimer'
               ? 'Keyboard: csTimer layout. Backspace undoes, Enter checks.'
               : 'Keyboard: a letter turns that side clockwise (R, U, F, L…), Shift+letter anticlockwise. Backspace undoes.')));
-          if (idx === 0 || sprint) caption(sprint ? 'Drag a layer to turn it, or use the buttons. The clock starts with your first move.' : 'Drag a layer to turn it, or use the buttons below.');
+          if (slotNow) slotCaption();
+          else if (idx === 0 || sprint) caption(sprint ? 'Drag a layer to turn it, or use the buttons. The clock starts with your first move.' : 'Drag a layer to turn it, or use the buttons below.');
           update();
           keyHandler = function (e) {
             if (done) return;
@@ -1334,6 +1469,7 @@
             caption(null);
             made.push(tok);
             if (!Cube().isRotation(tok)) turns++;
+            else followSlot(tok);
             active();
             update();
             var res = G.check(it, view.getState());
@@ -1353,15 +1489,29 @@
             }
             if (chips && Array.isArray(it.moves)) {
               var f = follow(start, it.moves, cur);
-              if (!f.off) { chips.done(f.at); chips.current(f.at < it.moves.length ? f.at : -1); }
+              if (!f.off) {
+                for (var ci = 0; ci < f.at; ci++) if (!it.cues || !it.cues[ci]) chips.show(ci, true);   // a hidden move shows once done right
+                chips.done(f.at); chips.current(f.at < it.moves.length ? f.at : -1);
+              }
               noteEl.hidden = !f.off || !made.length;
-              noteEl.textContent = 'That move isn’t part of the algorithm from here. Undo it (Backspace), or press Reset.';
-            }
+              noteEl.textContent = 'That move isn’t part of the algorithm from here. ' + (touch ? 'Tap Undo, or Reset to start again.' : 'Undo it (Backspace), or press Reset.');
+            } else if (!noteEl.hidden && made.length) noteEl.hidden = true;   // a Check note goes once they move on
+          }
+          function followSlot(tok) {
+            if (!slotNow) return;
+            slotNow = slotAfter(slotNow, tok);
+            slotCaption();
+          }
+          function slotCaption() {
+            if (!slotNow) { if (it.drillId === 'stuck-fix') caption('The stuck edge has left the middle layer: press Reset and turn the cube with y moves only.'); return; }
+            caption(slotNow === 'FR' ? 'The stuck edge is at the front-right now: do the Right algorithm.'
+              : 'The stuck edge is at the ' + ({ FL: 'front-left', BL: 'back-left', BR: 'back-right' }[slotNow]) + ' now. Turn the whole cube (y or y\') until it is at the front-right.');
           }
           function undo() {
             if (done || !view || !made.length || view.isBusy()) return;
             var tok = made.pop();
             if (!Cube().isRotation(tok)) turns++;
+            else followSlot(Cube().invertMove(tok));
             view.play([Cube().invertMove(tok)]).then(function () {
               update();
               if (!done) { var res = G.check(it, view.getState()); if (res.correct) reached(res); }
@@ -1373,6 +1523,9 @@
             stopAnim();
             show3d(start, it.highlight);
             made = [];
+            noteEl.hidden = true;
+            if (chips) { chips.reset(); chips.current(0); }
+            if (it.drillId === 'stuck-fix') { slotNow = it.slot; slotCaption(); }
             update();
           }
           function checkNow() {
@@ -1411,7 +1564,7 @@
         function renderStuckFix() {
           var it = item;
           setMode('3d');
-          caption('The stuck slot is highlighted (' + ({ FR: 'front-right', FL: 'front-left', BL: 'back-left', BR: 'back-right' }[it.slot] || '') + '). Drag the cube to look round the back.');
+          caption('The stuck edge is highlighted, in the ' + ({ FR: 'front-right', FL: 'front-left', BL: 'back-left', BR: 'back-right' }[it.slot] || '') + ' slot.' + (it.slot === 'FR' ? '' : ' The picture is turned so you can see it.'));
           var oc = options(it.options, function (id) {
             var res = G.check(it, id), ok = res.correct;
             oc.mark(it.answer, id);
@@ -1428,7 +1581,7 @@
             UI.empty(answerEl);
             setPrompt(it.performPrompt || it.prompt);
             performUI(it, {
-              rotations: true,
+              rotations: true, view: viewFor(it, 'perform'),
               onDone: function (r) {
                 var clean = faceTurns(it.moves || []), tidy = r.turns <= clean + 6;
                 var lead = !choiceOk ? 'You got it out. Next time choose “front-right, Right algorithm” straight away.'
@@ -1544,13 +1697,17 @@
           var right = results.filter(function (r) { return r && r.correct; }).length;
           var total = items.length;
           var ms = now() - roundT0;
-          var dd = data(), p = progressOf(dd && dd.gym ? dd.gym[d.id] : null);
+          var dd = data();
+          var newBest = d.id === 'leftright' ? !!safe(function () { return G.recordRound(dd, d.id, { right: right, total: total, ms: ms }).best; }, false) : false;
+          if (newBest) save();
+          var p = progressOf(dd && dd.gym ? dd.gym[d.id] : null);
           var sug = safe(function () { return G.suggest(dd, { hasCube: hasCube() }); }, null);
           var sd = sug && sug.drillId !== d.id ? G.drill(sug.drillId) : null;
           runEl.hidden = true;
           sumEl.hidden = false;
           UI.empty(sumEl);
-          var misses = results.filter(function (r) { return r && !r.correct; }).slice(0, 5);
+          var misses = [];
+          results.forEach(function (r, i) { if (r && !r.correct && misses.length < 5) misses.push(missText(r, i)); });
           var times = d.id === 'sprint' ? results.filter(function (r) { return r && r.correct; }).map(function (r) { return fmt(r.ms); }) : [];
           var againB = btn('Another round', 'refresh', startRound, 'btn-primary btn-lg');
           sumEl.appendChild(h('section', { class: 'card stack' },
@@ -1561,7 +1718,9 @@
               bestStreak >= 2 ? 'Best run: ' + bestStreak + ' in a row. ' : '',
               d.id === 'leftright' ? 'Time: ' + fmt(ms) + ' s (' + fmt(ms / Math.max(1, total)) + ' s each). ' : '',
               times.length ? 'Your times: ' + times.join(', ') + '. ' : '',
-              p.bestMs != null && (d.id === 'leftright' || d.id === 'sprint') ? 'Best ever: ' + fmt(p.bestMs) + ' s.' : ''
+              d.id === 'leftright' && newBest ? 'Your best perfect round yet!' : '',
+              d.id === 'leftright' && !newBest && p.bestRoundMs != null ? 'Best perfect round: ' + fmt(p.bestRoundMs) + ' s.' : '',
+              d.id === 'sprint' && p.bestMs != null ? 'Best ever: ' + fmt(p.bestMs) + ' s.' : ''
             ].join('')),
             p.strong ? UI.callout('success', 'Strong', p.recentRight + ' of your last ' + p.recentN + ' right. This one is in the bag: keep it fresh now and then.')
               : UI.callout('tip', null, 'Get 8 of your last 10 right to make this drill Strong. Right now: ' + p.recentRight + ' of ' + p.recentN + '.'),
@@ -1572,8 +1731,8 @@
           if (misses.length) {
             sumEl.appendChild(h('section', { class: 'card stack stack-sm' },
               h('h3', { class: 'm-0' }, 'Worth another look'),
-              h('ul', { class: 'gy-misses' }, misses.map(function (r) {
-                return h('li', null, h('p', { class: 'strong' }, r.item.prompt), r.explain ? h('p', { class: 'muted' }, r.explain) : null);
+              h('ul', { class: 'gy-misses' }, misses.map(function (m) {
+                return h('li', null, h('p', { class: 'strong' }, m.title), m.text ? h('p', { class: 'muted' }, m.text) : null);
               }))));
           }
           keyHandler = function (e) { if (e.key === 'Enter' && !onControl(e)) { e.preventDefault(); startRound(); } };
@@ -1588,7 +1747,8 @@
 
   def._helpers = {
     progressOf: progressOf, roundSize: roundSize, decideParts: decideParts, follow: follow, faceTurns: faceTurns,
-    stageFor: stageFor, isoSide: isoSide, pieceHl: pieceHl, sameHeld: sameHeld, isMoveLabel: isMoveLabel, ROUND: ROUND
+    stageFor: stageFor, isoSide: isoSide, pieceHl: pieceHl, sameHeld: sameHeld, isMoveLabel: isMoveLabel, ROUND: ROUND,
+    viewFor: viewFor, viewDir: viewDir, orbitPx: orbitPx, slotAfter: slotAfter, VIEW_AZ: VIEW_AZ, missText: missText
   };
 
   var App0 = CC().App;

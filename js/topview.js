@@ -203,7 +203,9 @@
     '.cc-tv__body { stroke: var(--border-strong, #c3ccd4); stroke-width: 0.35; }',
     '.cc-tv__st, .cc-iso__st { stroke: var(--sticker-edge, rgba(0,0,0,.22)); stroke-width: 0.3; transition: opacity .15s ease; }',
     '.cc-iso__st { stroke-width: 0.06; stroke-linejoin: round; }',
-    '.cc-tv.is-dim .cc-tv__st:not(.is-hl), .cc-iso.is-dim .cc-iso__st:not(.is-hl) { opacity: .5; }',
+    /* Dimmed stickers stay recognisable: at half opacity over the black plastic, yellow turned olive and
+       orange turned brown, so a learner could no longer tell the colours apart. */
+    '.cc-tv.is-dim .cc-tv__st:not(.is-hl), .cc-iso.is-dim .cc-iso__st:not(.is-hl) { opacity: .74; }',
     '.cc-tv__hl { fill: none; stroke: var(--cc-hl, #ff2bd6); stroke-width: 1.1; }',   /* the same pink as the 3D view\'s highlight */
     '.cc-iso__hl { fill: none; stroke: var(--cc-hl, #ff2bd6); stroke-width: 0.24; stroke-linejoin: round; }',
     '.cc-tv__pos { cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }',

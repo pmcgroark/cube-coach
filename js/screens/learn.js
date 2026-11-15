@@ -96,7 +96,13 @@
       algorithms: algs || [],
       mnemonics: (s && s.mnemonics) || [],
       mistakes: (s && s.mistakes) || [],
-      speedTips: (s && s.speedTips) || []
+      speedTips: (s && s.speedTips) || [],
+      // Middle Layer extras (see middleExtras); absent on other stages
+      halves: (s && s.halves) || null,
+      mirrorRule: (s && s.mirrorRule) || '',
+      whyItWorks: (s && s.whyItWorks) || '',
+      landmarks: (s && s.landmarks) || null,
+      lostPlace: (s && s.lostPlace) || null
     };
   }
 
@@ -231,7 +237,7 @@
     '.cc-sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-3); }',
     '.cc-sec-head h2 { margin: 0; }',
     '.cc-sec-head p { margin: 0; color: var(--text-2); }',
-    '.cc-section { scroll-margin-top: calc(var(--topbar-h) + var(--space-3)); }',
+    '.cc-section { scroll-margin-top: calc(var(--topbar-h) + env(safe-area-inset-top, 0px) + var(--space-3)); }',
 
     /* journey */
     '.cc-jcard { display: flex; flex-direction: column; gap: var(--space-3); }',
@@ -370,7 +376,40 @@
     '.cc-minfo { display: flex; gap: var(--space-3); align-items: flex-start; }',
     '.cc-minfo__tok { flex: none; display: inline-grid; place-items: center; min-width: 2.6em; height: 2.4em; padding: 0 8px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-family: var(--font-mono); font-size: 1.25rem; font-weight: 800; }',
     '.cc-minfo__body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }',
-    '.cc-minfo__body p { margin: 0; }'
+    '.cc-minfo__body p { margin: 0; }',
+
+    /* Middle Layer lesson: two halves, the mirror, why it works, checkpoints, lost your place */
+    '.cc-mid { display: flex; flex-direction: column; gap: var(--space-3); }',
+    '.cc-mid > h2, .cc-mid > p { margin: 0; }',
+    '.cc-mid__eyebrow { margin: 0 0 calc(-1 * var(--space-2)); }',
+    '.cc-mid__pair { display: grid; gap: var(--space-3); grid-template-columns: minmax(0, 1fr); }',
+    '@media (min-width: 760px) { .cc-mid__pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }',
+    '.cc-half { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); min-width: 0; }',
+    '.cc-half > h3 { margin: 0; font-size: var(--text-md); display: flex; align-items: center; gap: var(--space-2); }',
+    '.cc-half__part { display: flex; flex-direction: column; gap: 6px; }',
+    '.cc-half__label { margin: 0; font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); }',
+    '.cc-half__does { margin: 0; font-size: var(--text-sm); color: var(--text-2); }',
+    '.cc-beats { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }',
+    '.cc-beats > li { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }',
+    '.cc-beat__tok { display: grid; place-items: center; width: 100%; min-height: 2.3em; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface); font-family: var(--font-mono); font-size: 1.15rem; font-weight: 800; }',
+    '.cc-beat__word { font-size: var(--text-xs); font-weight: 600; color: var(--accent-text); text-align: center; line-height: 1.25; overflow-wrap: anywhere; }',
+    '.cc-mirror { display: grid; gap: var(--space-3); grid-template-columns: minmax(0, 1fr); }',
+    '@media (min-width: 760px) { .cc-mirror { grid-template-columns: repeat(2, minmax(0, 1fr)); } }',
+    '.cc-mirror__half { margin: 0; display: grid; grid-template-columns: 3.4em repeat(4, minmax(0, 1fr)); gap: 6px; align-items: center; }',
+    '.cc-mirror__half > figcaption { grid-column: 1 / -1; margin: 0; font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); }',
+    '.cc-mirror__side { font-size: var(--text-sm); font-weight: 700; }',
+    '.cc-mirror__tok { display: grid; place-items: center; min-height: 2.2em; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); font-family: var(--font-mono); font-size: 1.05rem; font-weight: 800; }',
+    '.cc-mirror__tok.is-left { background: var(--accent-soft); border-color: var(--accent-soft-2); color: var(--accent-text); }',
+    '.cc-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); counter-reset: cc-check; }',
+    '.cc-checks > li { margin: 0; display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); }',
+    '.cc-checks > li::before { counter-increment: cc-check; content: counter(cc-check); flex: none; display: inline-grid; place-items: center; width: 1.8em; height: 1.8em; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: var(--text-sm); font-weight: 800; }',
+    '.cc-checks p { margin: 0; min-width: 0; }',
+    '.cc-lost { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: var(--space-2); }',
+    '.cc-lost > li { margin: 0; }',
+    '.cc-mid__more { display: flex; flex-wrap: wrap; gap: var(--space-2); }',
+
+    /* phones & touch: whole-card lesson links get a 44 px line of their own */
+    '@media (pointer: coarse) { .cc-lcard__link { display: inline-flex; align-items: center; min-height: 44px; } .cc-lcard__title { line-height: 1.25; } }'
   ];
 
   function injectStyle() {
@@ -715,7 +754,9 @@
           : h('p', { class: 'small subtle m-0' }, 'No algorithm needed: just logic.'),
         h('div', { class: 'cc-lcard__actions' },
           h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onClick: function () { go('watch', { stage: s.id }); } },
-            icon('watch', 16), 'Watch it solved'))));
+            icon('watch', 16), 'Watch it solved'),
+          s.id === 'middle' && CC().Gym ? h('button', { type: 'button', class: 'btn btn-soft btn-sm', onClick: function () { go('gym'); } },
+            icon('zap', 16), 'Middle Layer Gym') : null)));
     });
     return grid;
   }
@@ -1279,6 +1320,121 @@
   }
 
   // ================================================================ LESSON: stage lesson
+  // ---------------------------------------------------------------- Middle Layer extras
+  // CC.Lessons.STAGES.middle carries halves, mirrorRule, whyItWorks, landmarks and lostPlace (the four
+  // things learners get stuck on). These render as their own cards; the matching "How to do it"
+  // paragraphs (which say the same in one line each) are left out of that list so nothing is said twice.
+  function gymDrillButton(drillId, label, cls) {
+    var G = CC().Gym, d = G && typeof G.drill === 'function' ? G.drill(drillId) : null;
+    return h('button', {
+      type: 'button', class: 'btn ' + (cls || 'btn-soft') + ' btn-sm',
+      onClick: function () { go('gym', d ? { drill: drillId } : {}); }
+    }, icon('zap', 16), label || ('Practise: ' + (d ? d.name : 'Middle Layer Gym')));
+  }
+
+  function beats(tokens, rhythm) {
+    var words = String(rhythm || '').split(/\s*,\s*/).filter(Boolean);
+    if (words.length !== tokens.length) words = [];
+    return h('ol', { class: 'cc-beats', 'aria-label': tokens.join(' ') + (words.length ? ' (' + words.join(', ') + ')' : '') },
+      tokens.map(function (t, i) {
+        return h('li', { title: moveText(t) },
+          h('span', { class: 'cc-beat__tok', 'aria-hidden': 'true' }, t),
+          words[i] ? h('span', { class: 'cc-beat__word', 'aria-hidden': 'true' }, words[i]) : null);
+      }));
+  }
+
+  function middleExtras(st) {
+    if (!st || st.id !== 'middle') return null;
+    var halves = Array.isArray(st.halves) ? st.halves.filter(function (x) { return x && x.first && x.second; }) : [];
+    var out = [];
+    function sideOf(hv) { return /left/.test(hv.algId) ? 'left' : 'right'; }
+
+    if (halves.length) {
+      out.push(h('section', { class: 'card cc-mid', 'aria-labelledby': 'cc-mid-halves' },
+        h('p', { class: 'eyebrow cc-mid__eyebrow' }, 'Remember the moves'),
+        h('h2', { class: 'h3', id: 'cc-mid-halves' }, 'Two halves'),
+        h('p', null, 'Each algorithm is eight moves, but you only have to learn two groups of four, and both groups have the same rhythm. Say the words as you turn.'),
+        h('div', { class: 'cc-mid__pair' }, halves.map(function (hv) {
+          var a = algInfo(hv.algId);
+          var side = sideOf(hv);
+          var rh = Array.isArray(hv.rhythm) ? hv.rhythm : [];
+          return h('article', { class: 'cc-half', 'aria-label': 'Goes ' + side },
+            h('h3', null, icon(side === 'left' ? 'arrowLeft' : 'arrowRight', 18), 'Goes ' + side, a ? h('span', { class: 'small muted' }, '(' + a.notation + ')') : null),
+            h('div', { class: 'cc-half__part' },
+              h('p', { class: 'cc-half__label' }, '1st half'),
+              beats(toks(hv.first), rh[0]),
+              hv.firstDoes ? h('p', { class: 'cc-half__does' }, hv.firstDoes) : null),
+            h('div', { class: 'cc-half__part' },
+              h('p', { class: 'cc-half__label' }, '2nd half'),
+              beats(toks(hv.second), rh[1]),
+              hv.secondDoes ? h('p', { class: 'cc-half__does' }, hv.secondDoes) : null));
+        })),
+        h('div', { class: 'cc-mid__more' }, gymDrillButton('halves'), gymDrillButton('nextmove', null, 'btn-ghost'))));
+    }
+
+    var right = halves.filter(function (x) { return sideOf(x) === 'right'; })[0];
+    var left = halves.filter(function (x) { return sideOf(x) === 'left'; })[0];
+    if (st.mirrorRule || (right && left)) {
+      var tables = right && left ? h('div', { class: 'cc-mirror' }, [['first', '1st half'], ['second', '2nd half']].map(function (p) {
+        var r = toks(right[p[0]]), l = toks(left[p[0]]);
+        return h('figure', { class: 'cc-mirror__half', 'aria-label': p[1] + ': right ' + r.join(' ') + ', left ' + l.join(' ') },
+          h('figcaption', null, p[1]),
+          h('span', { class: 'cc-mirror__side', 'aria-hidden': 'true' }, 'Right'),
+          r.map(function (t) { return h('span', { class: 'cc-mirror__tok', 'aria-hidden': 'true', title: moveText(t) }, t); }),
+          h('span', { class: 'cc-mirror__side', 'aria-hidden': 'true' }, 'Left'),
+          l.map(function (t) { return h('span', { class: 'cc-mirror__tok is-left', 'aria-hidden': 'true', title: moveText(t) }, t); }));
+      })) : null;
+      out.push(h('section', { class: 'card cc-mid', 'aria-labelledby': 'cc-mid-mirror' },
+        h('h2', { class: 'h3', id: 'cc-mid-mirror' }, 'Left is the mirror of right'),
+        st.mirrorRule ? h('p', null, mirrorText(st.mirrorRule)) : null,
+        tables,
+        h('p', { class: 'small muted' }, 'Read each column top to bottom: R becomes L, and every move turns the other way. Learn the right one first; the left one is the same dance with your other hand.'),
+        h('div', { class: 'cc-mid__more' }, gymDrillButton('mirror'))));
+    }
+
+    if (st.whyItWorks) {
+      out.push(h('section', { class: 'card card-muted cc-mid', 'aria-labelledby': 'cc-mid-why' },
+        h('h2', { class: 'h3', id: 'cc-mid-why' }, 'Why it works'),
+        h('p', null, st.whyItWorks)));
+    }
+
+    if (Array.isArray(st.landmarks) && st.landmarks.length) {
+      out.push(h('section', { class: 'card cc-mid', 'aria-labelledby': 'cc-mid-checks' },
+        h('p', { class: 'eyebrow cc-mid__eyebrow' }, 'Keep your place'),
+        h('h2', { class: 'h3', id: 'cc-mid-checks' }, 'Checkpoints'),
+        h('p', null, 'Check the cube against these as you go, so you always know where you are.'),
+        h('ol', { class: 'cc-checks' }, st.landmarks.map(function (t) {
+          var m = /^([^:]{3,40}):\s+(.+)$/.exec(String(t));
+          return h('li', null, h('p', null, m ? [h('strong', null, m[1] + ': '), m[2]] : t));
+        })),
+        h('div', { class: 'cc-mid__more' }, gymDrillButton('landmark'), gymDrillButton('slowmo', null, 'btn-ghost'))));
+    }
+
+    if (Array.isArray(st.lostPlace) && st.lostPlace.length) {
+      out.push(h('section', { class: 'card card-accent cc-mid', 'aria-labelledby': 'cc-mid-lost' },
+        h('h2', { class: 'h3', id: 'cc-mid-lost' }, 'Lost your place?'),
+        h('ul', { class: 'cc-lost' }, st.lostPlace.map(function (t) { return h('li', null, t); })),
+        h('div', { class: 'cc-mid__more' }, gymDrillButton('whereami', null, 'btn-primary'), gymDrillButton('slip', null, 'btn-secondary'))));
+    }
+    return out.length ? out : null;
+  }
+
+  // The card's heading already says "Left is the mirror of right", so don't open the text with it too.
+  function mirrorText(rule) {
+    var t = String(rule).replace(/^\s*left is the mirror of right\s*[:.,-]\s*/i, '');
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+
+  // "How to do it" paragraphs that a Middle Layer card already covers (see middleExtras).
+  function coveredByExtras(st, p) {
+    if (!st || st.id !== 'middle') return false;
+    p = String(p);
+    return (Array.isArray(st.halves) && st.halves.length && /^Learn each algorithm as two halves/.test(p)) ||
+      (st.mirrorRule && /^Left is the mirror of right/.test(p)) ||
+      (Array.isArray(st.landmarks) && st.landmarks.length && /^Check yourself after the first half/.test(p)) ||
+      (Array.isArray(st.lostPlace) && st.lostPlace.length && /^Lost your place\?/.test(p));
+  }
+
   function mountStageLesson(el, st, cleanups) {
     var L = Ls();
     var ids = stageIds();
@@ -1337,7 +1493,8 @@
         actions),
       st.howTo.length ? h('section', { class: 'card stack stack-sm' },
         h('h2', { class: 'h3 m-0' }, 'How to do it'),
-        h('ol', { class: 'stack stack-sm m-0' }, st.howTo.map(function (p) { return h('li', null, p); }))) : null,
+        h('ol', { class: 'stack stack-sm m-0' }, st.howTo.filter(function (p) { return !coveredByExtras(st, p); }).map(function (p) { return h('li', null, p); }))) : null,
+      middleExtras(st),
       st.recognise.length ? h('section', { class: 'stack stack-sm' },
         h('h2', { class: 'h3 m-0' }, 'Recognise each case'),
         h('p', { class: 'muted m-0' }, 'Look first, then act. Each case has a tell-tale sign and one thing to do.'),
@@ -2238,7 +2395,8 @@
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       learn: learnScreen, lesson: lessonScreen, watch: watchScreen,
-      _moveOptions: moveOptions, _weekFor: weekFor, _nearestSpeed: nearestSpeed
+      _moveOptions: moveOptions, _weekFor: weekFor, _nearestSpeed: nearestSpeed,
+      _coveredByExtras: coveredByExtras, _mirrorText: mirrorText
     };
   }
 })(typeof window !== 'undefined' ? window : globalThis);

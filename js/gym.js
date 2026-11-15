@@ -12,7 +12,8 @@
  *   CC.Gym.session(drillId, { seed, count, level }) -> [Item]  no duplicates in a round
  *   CC.Gym.check(item, response) -> { correct, explain, partial? }
  *   extras: mirror(tokens), drill(id), whereText(alg, k), goalMet(goal, state), MIRROR_FEEL,
- *           record(data, drillId, correct, { ms }, now), isStrong(entry), suggest(data, { hasCube })
+ *           record(data, drillId, correct, { ms }, now), recordRound(data, drillId, { right, total, ms }),
+ *           isStrong(entry), suggest(data, { hasCube })
  *
  * Feedback: every wrong option (top-level options and step options) carries `why`, a one-line
  * reason worked out by simulation (where that turn really takes the edge, which slot the other
@@ -159,7 +160,7 @@
     return d;
   }
   var DRILLS = [
-    D('spot', 1, 'Spot the middle edges', 'Tap every top edge with no yellow on it, or "none" if every one has yellow.', 'multi', false),
+    D('spot', 1, 'Spot the middle edges', 'Tap every top edge with no yellow on it, or “None of them” if every one has yellow.', 'multi', false),
     D('lineup', 1, 'Make the T', 'Which turn of the top puts the edge right above its matching centre?', 'tap', false),
     D('leftright', 1, 'Left or right?', 'The T is made: does the edge go left or right? A speed round.', 'tap', false),
     D('decide', 1, 'The whole decision', 'Which edge, which centre in front, which turn, which way: four quick taps.', 'sequence', false),
@@ -375,7 +376,8 @@
       return t + ' is not in the ' + A.name + ' algorithm: it only uses U, ' + (alg === 'right' ? 'R' : 'L') + ' and F.' +
         (O.moves.indexOf(t) !== -1 ? ' ' + t + ' belongs to the ' + O.name + ' algorithm' + (t === mirrorMove(ans) ? ' (it is the mirror of ' + ans + ').' : '.') : '');
     }
-    if (t === lib().C.invertMove(ans)) return t + ' turns the other way. Move ' + (k + 1) + ' is ' + ans + ': ' + PLAIN[ans] + '.';
+    // (the explanation that follows says what the right move does, so it is not repeated here)
+    if (t === lib().C.invertMove(ans)) return t + ' turns the other way: move ' + (k + 1) + ' is ' + ans + '.';
     var later = at.every(function (i) { return i > k + 1; }), earlier = at.every(function (i) { return i < k + 1; });
     var where = (at.length > 1 ? 'moves ' : 'move ') + listAnd(at.map(String));
     return t + (later ? ' comes later (' + where + ')' : earlier ? ' came earlier (' + where + ')' : ' is ' + where) + ', not move ' + (k + 1) + '.';
@@ -455,7 +457,7 @@
           '. ' + (u.length > 1 ? 'Those belong' : 'That one belongs') + ' in the middle layer. Every edge with a yellow sticker belongs to the top layer, so leave it.'
         : 'Every top edge has a yellow sticker, so none of them belongs in the middle layer. That means a middle edge is stuck (in the wrong slot or flipped): hold it at the front-right and do the Right algorithm to pop it out.';
       return base('spot', {
-        prompt: 'Tap every top edge that belongs in the middle layer (no yellow on it). If every one has yellow, tap "None of them".',
+        prompt: 'Tap every top edge that belongs in the middle layer (no yellow on it). If every one has yellow, tap “None of them”.',
         state: s, view: 'top', selectable: TOP.map(function (e) { return e.pos; }),
         options: TOP.map(function (e) { return { id: e.pos, label: e.label + ' edge', stickers: e.st.slice() }; })
           .concat([{ id: 'none', label: 'None of them', sub: 'Every top edge has yellow: pop a stuck edge out' }]),
@@ -487,7 +489,7 @@
     return base('leftright', {
       prompt: 'The upside-down T is made. Does the ' + pair(t.side, t.top) + ' edge go left or right?' + (level >= 2 ? '' : ' Look at its top colour.'),
       state: s, view: '3d', highlight: edgeStickers(s, t.side, t.top), options: sideOptionsFor(s, side), answer: side,
-      explain: 'Its top colour is ' + cn(t.top) + ', the same as the ' + side + ' centre, so it goes ' + side + ': ' + ALGS[alg].notation + '.',
+      explain: cap(cn(t.top)) + ' on top matches the ' + side + ' centre, so it goes ' + side + ': ' + ALGS[alg].notation + '.',
       alg: alg, moves: ALGS[alg].moves.slice(), targetState: ap(s, ALGS[alg].moves), edge: [t.side, t.top], concept: alg
     });
   };
@@ -526,7 +528,7 @@
           explain: turn === 'none' ? 'It is already right above the ' + cn(e.side) + ' centre.' : turn + ' brings it to the front, right above the ' + cn(e.side) + ' centre.' },
         { id: 'side', prompt: 'The T is made. Left or right?', state: s3, view: '3d', highlight: edgeStickers(s3, e.side, e.top),
           options: sideOptionsFor(s3, side), answer: side,
-          explain: 'Its top colour is ' + cn(e.top) + ', the same as the ' + side + ' centre: ' + ALGS[alg].notation + '.' }
+          explain: cap(cn(e.top)) + ' on top matches the ' + side + ' centre, so it goes ' + side + ': ' + ALGS[alg].notation + '.' }
       ];
       var moves = rot.concat(turn === 'none' ? [] : [turn], ALGS[alg].moves);
       return base('decide', {
@@ -550,7 +552,7 @@
         prompt: (i % 4 === 0 ? A.halves[half].name + '. ' : '') + 'Move ' + (i + 1) + ' of 8: what comes next?',
         options: withWhy(moveChoices(rnd, alg, tok), moveWhy.bind(null, alg, i)), answer: tok, state: before, stateAfter: after,
         highlight: pieceStickers(before, t.side, t.top),
-        explain: tok + ': ' + PLAIN[tok] + ' ("' + A.halves[half].rhythm.split(', ')[i % 4] + '").'
+        explain: tok + ': ' + PLAIN[tok] + ' (“' + A.halves[half].rhythm.split(', ')[i % 4] + '”).'
       });
     }
     return base('halves', {
@@ -570,7 +572,7 @@
         (k ? 'Done so far: ' + A.moves.slice(0, k).join(' ') + '. What is the next move?' : 'What is the first move?'),
       state: s, view: '3d', highlight: pieceStickers(s, t.side, t.top), options: withWhy(moveChoices(rnd, alg, tok), moveWhy.bind(null, alg, k)), answer: tok, alg: alg,
       done: A.moves.slice(0, k), moves: A.moves.slice(k), startState: t.state,
-      explain: 'Next is ' + tok + ' (' + PLAIN[tok] + '). ' + A.halves[half].name + ': ' + A.halves[half].moves.join(' ') + ' — "' + A.halves[half].rhythm + '".',
+      explain: 'Next is ' + tok + ' (' + PLAIN[tok] + '). ' + A.halves[half].name + ': ' + A.halves[half].moves.join(' ') + ' — “' + A.halves[half].rhythm + '”.',
       edge: [t.side, t.top], concept: alg + '-' + k
     });
   };
@@ -646,11 +648,11 @@
       var miss = a0 !== cF ? [a0, cF] : [b0, cR];
       var notHome = 'Its ' + cn(miss[0]) + ' sticker is next to the ' + cn(miss[1]) + ' centre: they do not match, so it is not home.';
       var whys = {
-        fine: { flipped: 'Look again: its ' + cn(a0) + ' sticker is next to the ' + cn(cF) + ' centre and its ' + cn(b0) + ' sticker next to the ' + cn(cR) + ' centre. Both match, so it is home.' },
+        fine: { flipped: 'Look again: both of its stickers match the centres next to them, so nothing is the wrong way round.' },
         flipped: { fine: notHome, 'wrong-slot': 'Its two colours, ' + cn(a0) + ' and ' + cn(b0) + ', are the two centres either side of this slot, so it does belong here, just the wrong way round.' },
         'wrong-slot': { fine: notHome, flipped: 'Flipped would mean ' + cn(cF) + ' and ' + cn(cR) + ' the wrong way round, but this edge is ' + pair(a0, b0) + ': it belongs in a different slot.' }
       }[want];
-      if (want === 'fine') whys['wrong-slot'] = whys.flipped;
+      if (want === 'fine') whys['wrong-slot'] = 'Look again: both of its stickers match the centres next to them, so it is in its own slot.';
       return base('stuck-spot', {
         prompt: 'Look at the highlighted middle edge (front-right). Is it home, flipped in its own slot, or in the wrong slot?',
         state: h, view: '3d', highlight: [23, 12], slot: 'FR', options: withWhy(STUCK_OPTIONS.map(clone), function (id) { return whys[id] || null; }), answer: want,
@@ -781,7 +783,7 @@
         (type === 'count' ? 'Looking at the cube, how many moves have you done?' : 'Looking at the cube, what is your next move?'),
       state: s, startState: t.state, view: '3d', highlight: pieceStickers(s, t.side, t.top), options: options, answer: answer, alg: alg,
       done: A.moves.slice(0, k), moves: A.moves.slice(k), targetState: ap(t.state, A.moves), question: type,
-      explain: 'You have done ' + k + (k === 1 ? ' move' : ' moves') + ' (' + A.moves.slice(0, k).join(' ') + '): ' + lcFirst(WHERE[alg][k]) + ' Next is ' + A.moves[k] + '.',
+      explain: 'You have done ' + k + (k === 1 ? ' move' : ' moves') + ' (' + A.moves.slice(0, k).join(' ') + '): ' + lcFirst(WHERE[alg][k]) + ' Next is ' + A.moves[k] + ' (' + PLAIN[A.moves[k]] + ').',
       edge: [t.side, t.top], concept: alg + '-' + k + '-' + type
     });
   };
@@ -821,7 +823,7 @@
         checkpoint: cp ? { after: cp.after, title: cp.title, text: cp.text, note: cp.note || null } : null });
     }
     return base('slowmo', {
-      prompt: 'Take your real cube, yellow on top. Find a top edge with no yellow that goes ' + alg + ', make the upside-down T at the front, then follow one move at a time. ' +
+      prompt: 'Take your real cube, yellow on top. Find a top edge with no yellow and make the upside-down T at the front, with its top colour matching the ' + alg.toUpperCase() + ' centre (so it goes ' + alg + '). Then follow one move at a time. ' +
         'Your cube will not match the pictures exactly: watch the edge and its white corner.',
       state: s, view: '3d', highlight: pieceStickers(s, t.side, t.top), alg: alg, moves: A.moves.slice(), steps: steps,
       checkpoints: LANDMARKS[alg], targetState: ap(s, A.moves), explain: algSentence(alg) + '. ' + rhythmSentence(alg),
@@ -1014,34 +1016,51 @@
     if (opts.coach !== false && Coach && typeof Coach.recordDrill === 'function') Coach.recordDrill(data, 'gym-' + drillId, !!correct, at);
     return { entry: g, strong: isStrong(g) };
   }
+  // A finished round of a speed drill ('leftright'): a perfect round's time is kept as
+  // data.gym[drillId].bestRoundMs (bestMs stays the best single answer). Returns { best } — true
+  // when this round set a new best. Imperfect rounds never count as a best time.
+  function recordRound(data, drillId, round) {
+    round = round || {};
+    if (!isObj(data) || !BY_ID[drillId] || !isObj(data.gym) || !isObj(data.gym[drillId])) return { best: false };
+    var g = data.gym[drillId], ms = Number(round.ms);
+    if (!(round.total > 0) || round.right !== round.total || !(ms > 0) || !isFinite(ms)) return { best: false };
+    var prev = Number(g.bestRoundMs);
+    if (prev > 0 && prev <= ms) return { best: false };
+    g.bestRoundMs = Math.round(ms);
+    return { best: true, previous: prev > 0 ? prev : null };
+  }
   // "Strong" = at least 8 right in the last 10 answers.
   function isStrong(entry) {
     if (!isObj(entry) || !Array.isArray(entry.recent)) return false;
     return entry.recent.slice(-10).reduce(function (a, x) { return a + (x ? 1 : 0); }, 0) >= 8;
   }
-  // The next drill to suggest: the weakest of groups 1–4 (the four problems), then the first
-  // drill in it that is not strong yet. Real-cube drills only when opts.hasCube.
+  // The next drill to suggest: the weakest of groups 1–4 (the four problems), then the weakest
+  // drill in it that is not strong yet. Ties go to the learner's own order (remembering the moves
+  // first, as the hub lists them) and to the earlier drill, so a new learner starts with "Learn it
+  // in halves". Real-cube drills only when opts.hasCube.
+  var PRIORITY = [2, 1, 3, 4];
   function suggest(data, opts) {
     opts = opts || {};
     var gym = isObj(data) && isObj(data.gym) ? data.gym : {};
     function usable(d) { return d.needsCube !== 'real' || opts.hasCube; }
     function score(d) { var e = gym[d.id]; return isStrong(e) ? 1 : e && Array.isArray(e.recent) ? e.recent.slice(-10).reduce(function (a, x) { return a + (x ? 1 : 0); }, 0) / 10 : 0; }
     var best = null;
-    [1, 2, 3, 4].forEach(function (gid) {
+    PRIORITY.forEach(function (gid) {
       var ds = DRILLS.filter(function (d) { return d.group === gid && d.kind !== 'route' && usable(d); });
       var avg = ds.reduce(function (a, d) { return a + score(d); }, 0) / ds.length;
-      var first = ds.filter(function (d) { return !isStrong(gym[d.id]); })[0];
-      if (first && (!best || avg < best.avg)) best = { avg: avg, group: gid, drillId: first.id };
+      var weakest = null;
+      ds.forEach(function (d) { if (!isStrong(gym[d.id]) && (!weakest || score(d) < score(weakest))) weakest = d; });
+      if (weakest && (!best || avg < best.avg)) best = { avg: avg, group: gid, drillId: weakest.id };
     });
     if (!best) return { drillId: opts.hasCube ? 'full-real' : 'sprint', group: 5, reason: 'Every drill is strong: put it together.' };
     return { drillId: best.drillId, group: best.group, reason: GROUPS[best.group - 1].problem + ' — start with “' + BY_ID[best.drillId].name + '”.' };
   }
 
   var Gym = {
-    ALGS: ALGS, DRILLS: DRILLS, GROUPS: GROUPS, LANDMARKS: LANDMARKS, MIRROR_RULE: MIRROR_RULE, MIRROR_FEEL: MIRROR_FEEL, CONCEPTS: CONCEPTS,
+    ALGS: ALGS, DRILLS: DRILLS, GROUPS: GROUPS, PRIORITY: PRIORITY, LANDMARKS: LANDMARKS, MIRROR_RULE: MIRROR_RULE, MIRROR_FEEL: MIRROR_FEEL, CONCEPTS: CONCEPTS,
     next: next, check: check, session: session,
     mirror: mirror, mirrorMove: mirrorMove, drill: drill, whereText: whereText, goalMet: goalMet,
-    record: record, isStrong: isStrong, suggest: suggest,
+    record: record, recordRound: recordRound, isStrong: isStrong, suggest: suggest,
     // geometry helpers (for screens and tests)
     slotStatus: function (s, sl) { lib(); return slotStatus(s, sl); },
     usableTop: function (s) { lib(); return usableTop(s); },

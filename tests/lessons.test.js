@@ -1035,4 +1035,35 @@ test('middle layer copy: two halves, the mirror rule, why it works, landmarks an
   assert.deepStrictEqual(M.recognise.map((r) => r.caseId), ['edge-right', 'edge-left', 'edge-stuck', 'edge-yellow']);
 });
 
+test('Middle Layer lesson page: the cards replace exactly the How-to lines they cover; the mirror table is a true mirror', () => {
+  const M = L.STAGES.middle;
+  const learn = require('../js/screens/learn.js');
+  const covered = M.howTo.filter((p) => learn._coveredByExtras(M, p));
+  // one How-to line each for two halves, the mirror rule, the checkpoint and lost-your-place; the rest stay
+  assert.strictEqual(covered.length, 4, 'covered: ' + covered.map((p) => p.slice(0, 30)).join(' | '));
+  assert.ok(covered.some((p) => p.includes(M.halves[0].first) && p.includes(M.halves[0].rhythm[0])), 'halves line is on the Two halves card');
+  assert.ok(covered.some((p) => p.includes(M.halves[1].first)), 'mirror line is on the mirror card');
+  assert.strictEqual(M.howTo.length - covered.length, 5);
+  STAGE_IDS.filter((id) => id !== 'middle').forEach((id) => assert.ok(L.STAGES[id].howTo.every((p) => !learn._coveredByExtras(L.STAGES[id], p)), id + ' keeps every line'));
+  // the card heading already says it, so the text after it starts afresh
+  assert.strictEqual(learn._mirrorText(M.mirrorRule).slice(0, 13), 'Swap R for L,');
+  // "Read each column top to bottom: R becomes L, and every move turns the other way" — by simulation:
+  // the left half does exactly what the right half does to the cube seen in a mirror (left <-> right).
+  const FACE_OF = Cube.FACES, mir = [];
+  for (let i = 0; i < 54; i++) {
+    const st = Cube.STICKERS[i], f = { R: 'L', L: 'R' }[st.face] || st.face;
+    mir[i] = FACE_OF.indexOf(f) * 9 + st.row * 3 + (2 - st.col);
+  }
+  const reflect = (x) => x.map((_, i) => x[mir[i]]);
+  const lab = Array.from({ length: 54 }, (_, i) => i);
+  ['first', 'second'].forEach((k) => {
+    const r = M.halves[0][k], l = M.halves[1][k];
+    assert.deepStrictEqual(Cube.applyAlg(lab, l), reflect(Cube.applyAlg(reflect(lab), r)), k + ' half: left = mirror of right');
+    // and column by column, as drawn on the card
+    tok(r).forEach((t, j) => assert.deepStrictEqual(Cube.applyAlg(lab, [tok(l)[j]]), reflect(Cube.applyAlg(reflect(lab), [t])), k + ' half, move ' + (j + 1)));
+  });
+  // sanity: the reflection really is one (a right move is not its own mirror)
+  assert.notDeepStrictEqual(Cube.applyAlg(lab, 'R'), reflect(Cube.applyAlg(reflect(lab), 'R')));
+});
+
 console.log(passed + ' lessons tests passed' + (process.exitCode ? ' (with failures)' : ''));

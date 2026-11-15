@@ -439,6 +439,78 @@ test('sequencer: a throwing callback does not break the queue', async () => {
   } finally { console.error = origError; }
 });
 
+// ------------------------------------------------------------------ touch: on the cube or on the background?
+// The camera distance the view uses for a w×h canvas (render3d.js resize()).
+function fitDist(w, h) {
+  const vf = I.FOV * Math.PI / 180 / 2, hf = Math.atan(Math.tan(vf) * w / h);
+  return I.FIT_RADIUS / Math.sin(Math.min(vf, hf));
+}
+function polyArea(p) {
+  let a = 0;
+  for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; }
+  return Math.abs(a) / 2;
+}
+
+test('touchActionFor: a draggable cube lets vertical swipes scroll the page; never touch-action none', () => {
+  assert.strictEqual(I.touchActionFor(true, false), 'pan-y');
+  assert.strictEqual(I.touchActionFor(true, true), 'pan-y');
+  assert.strictEqual(I.touchActionFor(false, true), 'pan-y');
+  assert.strictEqual(I.touchActionFor(false, false), '');
+});
+
+test('convexHull / inHull: square with inside points, edges and the finger margin', () => {
+  const hull = I.convexHull([[0, 0], [10, 0], [10, 10], [0, 10], [5, 5], [2, 8], [10, 5], null]);
+  assert.strictEqual(hull.length, 4, 'interior and collinear points dropped');
+  assert.ok(I.inHull(hull, 5, 5, 0) && I.inHull(hull, 0.01, 9.99, 0), 'inside');
+  assert.ok(!I.inHull(hull, 11, 5, 0) && !I.inHull(hull, -3, -3, 2), 'outside');
+  assert.ok(I.inHull(hull, 11, 5, 1.5) && I.inHull(hull, -1, -1, 1.5), 'within the margin');
+  assert.ok(!I.inHull(hull, 15, 15, 4), 'beyond the margin (corner distance √50)');
+  assert.ok(!I.inHull([[0, 0], [1, 1]], 0, 0, 5), 'degenerate hull holds nothing');
+});
+
+test('projectPoint: matches a camera at +z looking at the origin, and is the THREE lookAt frame', () => {
+  const w = 400, h = 300, d = 10, t = Math.tan(I.FOV * Math.PI / 360);
+  const c0 = I.projectPoint([0, 0, 0], { az: 0, el: 0, dist: d }, w, h);
+  assert.ok(Math.abs(c0[0] - 200) < 1e-9 && Math.abs(c0[1] - 150) < 1e-9, 'origin at the centre');
+  const p = I.projectPoint([1, 1, 0], { az: 0, el: 0, dist: d }, w, h);
+  assert.ok(Math.abs(p[0] - (1 / (d * t * w / h) + 1) / 2 * w) < 1e-9, '+x goes right');
+  assert.ok(Math.abs(p[1] - (1 - 1 / (d * t)) / 2 * h) < 1e-9, '+y goes up');
+  // orbiting a quarter turn to the right (az 90°) the +x face looks at the camera: +z now goes left
+  const q = I.projectPoint([0, 0, 1], { az: Math.PI / 2, el: 0, dist: d }, w, h);
+  assert.ok(q[0] < 200 - 1, '+z left of centre seen from +x');
+  assert.strictEqual(I.projectPoint([0, 0, 20], { az: 0, el: 0, dist: d }, w, h), null, 'behind the camera');
+});
+
+test('cubeOutline: at the default view the cube is a big target and the background stays free to scroll', () => {
+  [[358, 358], [358, 300], [600, 540], [380, 250]].forEach(([w, h]) => {
+    const cam = { az: CC.View3D.DEFAULT_VIEW.az, el: CC.View3D.DEFAULT_VIEW.el, dist: fitDist(w, h) };
+    const hull = I.cubeOutline(cam, w, h);
+    assert.strictEqual(hull.length, 6, 'a cube seen corner-on is a hexagon');
+    hull.forEach(([x, y]) => assert.ok(x > 0 && x < w && y > 0 && y < h, 'outline fits the canvas ' + w + 'x' + h));
+    assert.ok(I.inHull(hull, w / 2, h / 2, 0), 'the middle is on the cube');
+    const share = polyArea(hull) / (w * h);
+    assert.ok(share > 0.2 && share < 0.75, 'cube covers ' + share.toFixed(2) + ' of ' + w + 'x' + h);
+    [[4, 4], [w - 4, 4], [4, h - 4], [w - 4, h - 4]].forEach(([x, y]) =>
+      assert.ok(!I.inHull(hull, x, y, I.TOUCH_MARGIN), 'canvas corner is background ' + w + 'x' + h));
+    // a strip down each side is background on a square-ish canvas (where a thumb scrolls past it)
+    if (w / h < 1.25) assert.ok(!I.inHull(hull, 6, h / 2, I.TOUCH_MARGIN) || !I.inHull(hull, w - 6, h / 2, I.TOUCH_MARGIN), 'a side strip is background');
+  });
+});
+
+test('cubeOutline: every sticker centre at any orbit lies inside the outline (touching a sticker claims the touch)', () => {
+  const w = 358, h = 358, dist = fitDist(w, h);
+  for (let az = -Math.PI; az <= Math.PI; az += Math.PI / 7) {
+    for (let el = -1.4; el <= 1.4; el += 0.35) {
+      const cam = { az, el, dist };
+      const hull = I.cubeOutline(cam, w, h);
+      Cube.STICKERS.forEach((s) => {
+        const pt = I.projectPoint(s.point.map((v) => v / 2), cam, w, h);   // scene units = points / 2
+        assert.ok(I.inHull(hull, pt[0], pt[1], 0.01), 'sticker ' + s.index + ' at az ' + az.toFixed(2) + ' el ' + el.toFixed(2));
+      });
+    }
+  }
+});
+
 // ------------------------------------------------------------------ run
 (async () => {
   for (const [name, fn] of queue) {
