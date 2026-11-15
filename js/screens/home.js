@@ -106,7 +106,8 @@
     virtual: { icon: 'cube', label: 'Virtual cube', start: 'Start' },
     solve: { icon: 'camera', label: 'Your cube', start: 'Scan my cube' },
     timed: { icon: 'timer', label: 'Timed', start: 'Start timer' },
-    algs: { icon: 'tip', label: 'Flashcards', start: 'Review' }
+    algs: { icon: 'tip', label: 'Flashcards', start: 'Review' },
+    gym: { icon: 'zap', label: 'Gym', start: 'Open the gym' }
   };
   var LEVEL_NAMES = ['Solo', 'Nudge', 'Coach', 'Show'];
   var THRESHOLDS = [78, 50, 25];
@@ -200,6 +201,10 @@
           return isObj(a) && ms(a.due) > now.getTime() && Number(a.total) > 0;
         });
       }
+      case 'gym': {
+        var g = isObj(data.gym) ? data.gym : {};
+        return Object.keys(g).some(function (k) { return (!item.drillId || k === item.drillId) && isObj(g[k]) && ms(g[k].lastAt) >= t0; });
+      }
       default: return false;
     }
   }
@@ -228,6 +233,7 @@
       case 'solve': return ['scan', {}];
       case 'timed': return ['solve', { device: 'physical', source: 'scramble', timed: true }];
       case 'algs': return ['drills', { tab: 'algs' }];
+      case 'gym': return ['gym', item.drillId ? { drill: item.drillId } : {}];
       default: return ['learn', {}];
     }
   }

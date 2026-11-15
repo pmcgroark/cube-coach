@@ -802,13 +802,15 @@
     return out;
   }
 
-  function mergeGymDrill(x, y) { // gym: { right, total, streak, best, bestMs, lastAt, recent }
+  function mergeGymDrill(x, y) { // gym: { right, total, streak, best, bestMs, bestRoundMs, lastAt, recent }
     var out = mergeCounts(x, y);
     if (!isObj(x) || !isObj(y)) return out;
     var best = Math.max(num(x.best, -Infinity), num(y.best, -Infinity));
     if (isFinite(best)) out.best = best;
     var ms = [x.bestMs, y.bestMs].filter(function (v) { return typeof v === 'number' && isFinite(v) && v > 0; });
     if (ms.length) out.bestMs = Math.min.apply(null, ms);
+    var rm = [x.bestRoundMs, y.bestRoundMs].filter(function (v) { return typeof v === 'number' && isFinite(v) && v > 0; });
+    if (rm.length) out.bestRoundMs = Math.min.apply(null, rm);   // fastest perfect round on either device
     return out;
   }
 

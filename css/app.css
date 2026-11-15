@@ -1400,6 +1400,13 @@ a, button, input, select, textarea, label, summary, [role="button"], [role="tab"
   .card-interactive:hover, .tile:hover { transform: none; box-shadow: var(--shadow-1); border-color: var(--border); }
   .tile:hover .tile__arrow { transform: none; color: var(--text-3); }
   .card-interactive:active, .tile:active { border-color: var(--accent-soft-2); background: var(--surface-2); }
+  /* ...and don't leave a tapped button looking pressed (grey) either. */
+  .btn:hover:not(:active), .btn-secondary:hover:not(:active) { background: var(--surface); }
+  .btn-primary:hover:not(:active) { background: var(--accent); }
+  .btn-ghost:hover:not(:active) { background: transparent; color: var(--text-2); }
+  .btn-soft:hover:not(:active) { background: var(--accent-soft); }
+  .btn-danger:hover:not(:active) { background: var(--danger); filter: none; }
+  .btn-danger-ghost:hover:not(:active) { background: transparent; }
 }
 
 /* Short screens = a phone on its side: a slimmer top bar and cubes that fit the height. */

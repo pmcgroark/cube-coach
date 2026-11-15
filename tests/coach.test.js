@@ -1161,5 +1161,28 @@ test('local days across daylight-saving changes (both hemispheres)', () => {
   void start;
 });
 
+test('todayPlan: a Middle Layer Gym block while stuck on the middle layer (and only then)', () => {
+  require('../js/gym.js');
+  try {
+    const now = new Date(2026, 10, 15, 9);
+    const d = Store.defaults();
+    ['daisy', 'cross', 'corners'].forEach((id) => { d.skills[id] = Object.assign({}, d.skills[id], { mastery: 85, sessions: 12, lastAt: now.toISOString() }); });
+    d.skills.middle = Object.assign({}, d.skills.middle, { mastery: 28, sessions: 6, lastAt: now.toISOString() });
+    for (const cube of [true, false]) {
+      const plan = Coach.todayPlan(d, now, { cube });
+      const gym = plan.filter((it) => it.kind === 'gym');
+      assert.strictEqual(gym.length, 1, 'one gym item');
+      assert.strictEqual(gym[0].stageId, 'middle');
+      assert.ok(globalThis.CC.Gym.drill(gym[0].drillId), 'suggested drill exists: ' + gym[0].drillId);
+      assert.strictEqual(plan.reduce((a, it) => a + it.minutes, 0), 20, 'still 20 minutes');
+      assert.ok(!gym[0].needsCube);
+    }
+    d.skills.middle.mastery = 60;
+    assert.ok(!Coach.todayPlan(d, now).some((it) => it.kind === 'gym'), 'no gym once past Nudge');
+    d.skills.middle.mastery = 10; d.skills.middle.sessions = 0;
+    assert.ok(!Coach.todayPlan(d, now).some((it) => it.kind === 'gym'), 'no gym before the middle layer is tried');
+  } finally { delete globalThis.CC.Gym; }
+});
+
 if (!process.exitCode) console.log('(hint ladders checked on ' + ranSolverSteps + ' real solver steps)');
 console.log(passed + ' coach/store tests passed' + (process.exitCode ? ' (some FAILED)' : ''));

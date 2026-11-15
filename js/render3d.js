@@ -38,6 +38,8 @@
   var DEG = Math.PI / 180;
   var BASE_MS = 280;                                  // one quarter turn at speed 1
   var DEFAULT_VIEW = { az: 34 * DEG, el: 27 * DEG }; // front-top-right: U, F and R visible
+  // Camera directions for setView(side), in degrees round from the front (right = the default view).
+  var VIEW_SIDES = { right: 34, left: -34, 'back-right': 146, 'back-left': -146 };
   var EL_LIMIT = 82 * DEG;                            // orbit clamp, so the camera never flips
   var FIT_RADIUS = 2.75;                              // scene units the camera keeps in view
   var ACCENT = '#ff2bd6';
@@ -703,6 +705,7 @@
     api.highlight = function (indices) { hl = (indices || []).slice(); draw(); };
     api.setTurnable = function () {};
     api.resetCamera = function () {};
+    api.setView = function () {};
     api.resize = function () { if (!disposed) net.update(null, { size: fitSize() }); };
     api.dispose = function () {
       if (disposed) return;
@@ -873,20 +876,31 @@
       if (!tw) return false;
       if (tw.start == null) tw.start = t;
       var f = (t - tw.start) / tw.dur;
-      if (f >= 1) { cam.az = DEFAULT_VIEW.az; cam.el = DEFAULT_VIEW.el; cam.tween = null; placeCamera(); return false; }
+      if (f >= 1) { cam.az = tw.az1; cam.el = tw.el1; cam.tween = null; placeCamera(); return false; }
       var k = ease(f);
       cam.az = tw.az0 + (tw.az1 - tw.az0) * k;
       cam.el = tw.el0 + (tw.el1 - tw.el0) * k;
       placeCamera();
       return true;
     }
+    // HOME is where resetCamera() (and a double-click) returns to; setView(side) moves it.
+    var HOME = { az: DEFAULT_VIEW.az, el: DEFAULT_VIEW.el };
+    function glideTo(az, el) {
+      var twoPi = Math.PI * 2;
+      var az1 = az + twoPi * Math.round((cam.az - az) / twoPi);
+      if (Math.abs(az1 - cam.az) < 1e-4 && Math.abs(el - cam.el) < 1e-4) return;
+      cam.tween = { az0: cam.az, el0: cam.el, az1: az1, el1: el, dur: 480, start: null };
+      kick();
+    }
     api.resetCamera = function () {
       if (disposed) return;
-      var twoPi = Math.PI * 2;
-      var az1 = DEFAULT_VIEW.az + twoPi * Math.round((cam.az - DEFAULT_VIEW.az) / twoPi);
-      if (Math.abs(az1 - cam.az) < 1e-4 && Math.abs(DEFAULT_VIEW.el - cam.el) < 1e-4) return;
-      cam.tween = { az0: cam.az, el0: cam.el, az1: az1, el1: DEFAULT_VIEW.el, dur: 480, start: null };
-      kick();
+      glideTo(HOME.az, HOME.el);
+    };
+    api.setView = function (side) {
+      if (disposed) return;
+      var deg = VIEW_SIDES[side] != null ? VIEW_SIDES[side] : VIEW_SIDES.right;
+      HOME = { az: deg * DEG, el: DEFAULT_VIEW.el };
+      glideTo(HOME.az, HOME.el);
     };
 
     // ---- sizing
@@ -1241,6 +1255,7 @@
     supported: supported,
     create: create,
     DEFAULT_VIEW: DEFAULT_VIEW,
+    VIEW_SIDES: VIEW_SIDES,
     _internal: {
       dragToToken: dragToToken, inPlaneAxes: inPlaneAxes, turnInfo: turnInfo, arrowSpec: arrowSpec,
       createSequencer: createSequencer, ease: ease, viewDir: viewDir, netCell: netCell, padRows: padRows,

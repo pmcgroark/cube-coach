@@ -887,6 +887,24 @@
         'Five unaided solves in a row. Aim for a steady average under ' + fmtTime(goalMs(data)) + ', not one lucky solve.'));
     }
 
+    // Stuck on the middle layer (tried it, still under Nudge): a short Middle Layer Gym block, early in the plan.
+    var G = CC().Gym;
+    if (G && num(skillOf(data, 'middle').sessions, 0) > 0 && masteryOf(data, 'middle', now) < PARAMS.thresholds[1]) {
+      var sug = null;
+      try { sug = typeof G.suggest === 'function' ? G.suggest(data || {}, { hasCube: opts.cube !== false }) : null; } catch (e) { sug = null; }
+      var gd = sug && sug.drillId && typeof G.drill === 'function' ? G.drill(sug.drillId) : null;
+      plan.splice(Math.min(1, plan.length), 0, item(5, 'gym', 'middle', 'Middle Layer Gym' + (gd && gd.name ? ': ' + gd.name : ''),
+        'Short exercises for the middle layer: seeing the case, remembering the moves, stuck edges, keeping your place. Most need no cube.',
+        { stageId: 'middle', drillId: gd ? gd.id : null }));
+      // Make room: take the 5 minutes from the longest other items (never below 2 minutes each).
+      for (var take = 5; take > 0; take--) {
+        var big = null;
+        plan.forEach(function (it) { if (it.kind !== 'gym' && it.minutes > 2 && (!big || it.minutes > big.minutes)) big = it; });
+        if (!big) break;
+        big.minutes--;
+      }
+    }
+
     // Make the plan add up to exactly the target length by adjusting the main hands-on item.
     var total = 0; plan.forEach(function (it) { total += it.minutes; });
     var diff = PARAMS.planMinutes - total;

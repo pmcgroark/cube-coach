@@ -764,6 +764,23 @@ test('practice › stages: "weakest" means weakest of the stages practised, not 
   assert.strictEqual(drills._weakestPractised(list, mast, d), 'cross');
 });
 
+test('progress merge keeps the fastest perfect gym round (bestRoundMs) from either device', () => {
+  const a = Store.defaults(), b = Store.defaults();
+  a.gym = { leftright: { right: 10, total: 10, streak: 10, best: 10, bestMs: null, bestRoundMs: 15000, lastAt: '2026-11-10T09:00:00.000Z', recent: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] } };
+  b.gym = { leftright: { right: 40, total: 48, streak: 3, best: 12, bestMs: null, bestRoundMs: 18000, lastAt: '2026-11-12T09:00:00.000Z', recent: [1, 0, 1, 1, 1, 1, 1, 0, 1, 1] } };
+  for (const m of [Store.merge(a, b), Store.merge(b, a)]) {
+    assert.strictEqual(m.gym.leftright.bestRoundMs, 15000);
+    assert.strictEqual(m.gym.leftright.total, 48, 'larger totals kept');
+  }
+  b.gym.leftright.bestRoundMs = 0; delete a.gym.leftright.bestRoundMs;
+  assert.ok(!(Store.merge(a, b).gym.leftright.bestRoundMs > 0), 'no made-up time');
+});
+
+test('View3D camera sides match the gym screen (setView)', () => {
+  require('../js/render3d.js');
+  assert.deepStrictEqual(globalThis.CC.View3D.VIEW_SIDES, { right: 34, left: -34, 'back-right': 146, 'back-left': -146 });
+});
+
 test('stats: Middle Layer Gym answers show as one named row, never as raw "gym-spot" ids', () => {
   const stats = require('../js/screens/stats.js');
   require('../js/solver.js');

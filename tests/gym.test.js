@@ -260,7 +260,7 @@ test('DRILLS: every id from the spec, with group, kind, cube needs and routes', 
   assert.deepStrictEqual(Gym.drill('full-virtual').route, { id: 'solve', params: { device: 'virtual', source: 'drill', stage: 'middle' } });
   assert.deepStrictEqual(Gym.drill('full-real').route, { id: 'solve', params: { device: 'physical', source: 'drill', stage: 'middle' } });
   assert.deepStrictEqual(Gym.GROUPS.map((g) => g.name), ['See it', 'Remember it', 'Stuck edges', 'Keep your place', 'Put it together']);
-  assert.deepStrictEqual(Gym.GROUPS.slice(0, 4).map((g) => g.problem), ["I don't know what to do", "I can't remember the moves", 'An edge is stuck', 'I lose my place']);
+  assert.deepStrictEqual(Gym.GROUPS.slice(0, 4).map((g) => g.problem), ['I don’t know what to do', 'I can’t remember the moves', 'An edge is stuck', 'I lose my place']);
   assert.throws(() => Gym.next('nope', { seed: 1 }));
 });
 

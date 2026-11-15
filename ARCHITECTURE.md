@@ -236,9 +236,11 @@ hull of its 8 projected corners plus `TOUCH_MARGIN` = 12 px); a touch on the bac
 scrolls the page vertically and orbits sideways. A picture-only cube leaves touch alone. Orbit is
 0.0085 rad per px of drag. Pure helpers on `CC.View3D._internal`: `projectPoint`, `convexHull`,
 `inHull`, `cubeOutline`, `touchActionFor`, `viewDir`, `dragToToken`, `createSequencer`, … and the
-constants `TOUCH_MARGIN`, `FOV` (30°), `FIT_RADIUS`. There is no camera API beyond `resetCamera()`
-(no `setView`): the Gym screen calls `view.setView(side)` if it ever exists and otherwise turns the
-view with a synthetic sideways drag on an empty corner of the canvas.
+constants `TOUCH_MARGIN`, `FOV` (30°), `FIT_RADIUS`. Camera API: `setView(side)` glides the camera
+to `'right'` (the default, front-top-right), `'left'`, `'back-right'` or `'back-left'` (degrees in
+`CC.View3D.VIEW_SIDES`, the same as the Gym screen's `VIEW_AZ`) and makes that side the home that
+`resetCamera()` and a double-click return to; the 2D fallback's `setView` is a no-op. The Gym uses it for
+Left-algorithm items and stuck-fix back slots (its synthetic-drag fallback only runs without `setView`).
 
 ### `CC.TopView` — js/topview.js (SVG cube pictures; pure geometry testable in node)
 ```
@@ -321,7 +323,7 @@ Loading never throws (missing/blocked storage falls back to memory; corrupt JSON
 `cubecoach.v1.corrupt`). Unknown keys are kept, so a newer version's data survives a round trip.
 **Merge rules:** solves = union by id (the same solve counts once); skills = higher mastery, larger
 session and soloClean counts, latest practice date; drills and gym = the record with the larger total
-(gym also keeps the higher best streak and the lower `bestMs`); practiceLog = per day the larger
+(gym also keeps the higher best streak, the lower `bestMs` and the lower `bestRoundMs`); practiceLog = per day the larger
 minutes; milestones = earliest date; algs = the higher Leitner box; settings = this device's, with
 keys it lacks filled in from the code (never the DEVICE_SETTINGS).
 
@@ -337,13 +339,15 @@ CC.Coach.logPractice(data, minutes, now?)
 CC.Coach.stats(data, { device }?) -> { count, best, last, ao5, ao12, mean, trend:[{at,ms}], byStage:{[id]:{avgMs, share}},
                                        streak, todayMinutes, weekMinutes, slowestStage }
 CC.Coach.journey(data) -> { phase:'learn'|'practice'|'independent'|'speed', title, description, progress:0..1, next, focusStage }
-CC.Coach.todayPlan(data, now?, { cube }?) -> [{ minutes, kind:'lesson'|'watch'|'drill'|'virtual'|'solve'|'timed'|'algs', target, title, why, … }]
+CC.Coach.todayPlan(data, now?, { cube }?) -> [{ minutes, kind:'lesson'|'watch'|'drill'|'virtual'|'solve'|'timed'|'algs'|'gym', target, title, why, … }]
 CC.Coach.milestones(data) -> [{ id, name, desc, earnedAt|null }]
 CC.Coach.algDue(data, now?) -> [algIds]    CC.Coach.gradeAlg(data, algId, correct, now?)
 CC.Coach.hintLadder(step) -> [{ level:1, text }, { level:2, text }, { level:3, text, moves, plain }]
 ```
-`todayPlan` does not yet point at the Gym; Home (a "Middle Layer Gym" tile) and Practice (a nudge
-on the middle-stage row) do that themselves.
+While the middle layer has been tried and is still under Nudge (mastery < 50), `todayPlan` adds a
+5-minute `kind:'gym'` item early in the plan (`stageId:'middle'`, `drillId` from `CC.Gym.suggest`; the
+5 minutes come from the longest other items, none below 2). Home routes it to `go('gym', { drill })`.
+Home also shows a "Middle Layer Gym" tile and Practice a nudge on the middle-stage row.
 
 ### `CC.Drills` — the generator inside js/screens/drills.js (pure; uses Solver, Lessons, Cube)
 ```

@@ -243,10 +243,10 @@ full module contracts; the code (each file's header and exports) is the final wo
   Practice › Stages; Stats (Drill accuracy links to the weakest gym drill); the solve screen on the
   middle stage ("Stuck? Practise in the Gym", which asks before leaving a solve in progress).
 
-### Still open
+### Resolved after the QA pass
 
-* `CC.View3D` has no `setView(side)` yet; the Gym turns the view with a synthetic sideways drag on an
-  empty corner of the canvas and will use `setView` as soon as it exists.
-* `CC.Store.merge` does not yet keep the faster `bestRoundMs` of two devices (it takes the record
-  with the larger total).
-* `CC.Coach.todayPlan` does not suggest the Gym; Home and Practice nudge towards it instead.
+* `CC.View3D.setView(side)` exists; the Gym calls it (synthetic drag only as a fallback).
+* `CC.Store.merge` keeps the faster `bestRoundMs` of two devices.
+* `CC.Coach.todayPlan` adds a 5-minute `kind:'gym'` item (with `drillId` from `CC.Gym.suggest`) while the
+  middle layer has been tried and its mastery is under the Nudge threshold (50); Home routes it to
+  `go('gym', { drill })` and ticks it when that drill (or any gym drill) was used since the plan was made.

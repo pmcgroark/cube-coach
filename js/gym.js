@@ -148,8 +148,8 @@
 
   // ------------------------------------------------------------------ groups and drills
   var GROUPS = [
-    { id: 1, name: 'See it', problem: "I don't know what to do", desc: 'Spot the right edge, make the upside-down T, choose left or right.' },
-    { id: 2, name: 'Remember it', problem: "I can't remember the moves", desc: 'Two halves of four moves each, and left is the mirror of right.' },
+    { id: 1, name: 'See it', problem: "I don’t know what to do", desc: 'Spot the right edge, make the upside-down T, choose left or right.' },
+    { id: 2, name: 'Remember it', problem: "I can’t remember the moves", desc: 'Two halves of four moves each, and left is the mirror of right.' },
     { id: 3, name: 'Stuck edges', problem: 'An edge is stuck', desc: 'Edges in the wrong slot or flipped, and what to do when no top edge fits.' },
     { id: 4, name: 'Keep your place', problem: 'I lose my place', desc: 'What the cube looks like half-way, and how to recover from a slip.' },
     { id: 5, name: 'Put it together', problem: 'Put it together', desc: 'Whole middle layers, on the virtual cube or your real one.' }
