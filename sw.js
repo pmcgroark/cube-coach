@@ -19,7 +19,7 @@
  */
 'use strict';
 
-var VERSION = '2026-11-14.4426ccc4';
+var VERSION = '2026-11-15.257c9f6f';
 var CACHE_PREFIX = 'cube-coach-';
 var CACHE = CACHE_PREFIX + VERSION;
 var INDEX = 'index.html';
